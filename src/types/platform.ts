@@ -2,6 +2,7 @@ export type UserRole = 'user' | 'business' | 'moderator' | 'support' | 'admin';
 
 export type DashboardTab =
   | 'overview'
+  | 'business'
   | 'profile'
   | 'barterAssets'
   | 'wallet'
@@ -95,6 +96,10 @@ export interface UserProfile {
   nationalId?: string;
   iban?: string;
   isVerified: boolean;
+  verifiedAt?: string;
+  simOwnershipRevoked?: boolean;
+  autoOfficialInvoice?: boolean;
+  uiTheme?: 'system' | 'light' | 'dark';
   joinedAt: string;
   lastLoginAt?: string;
   storeName?: string;

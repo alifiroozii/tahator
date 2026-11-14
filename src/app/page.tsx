@@ -171,6 +171,9 @@ export default function HomePage() {
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [myAdIds, setMyAdIds] = useState<string[]>(['ad-1', 'ad-2']);
+  const [archivedAds, setArchivedAds] = useState<
+    { listing: Listing; reason: string; archivedAt: string }[]
+  >([]);
   const [listingMeta, setListingMeta] = useState<Record<string, ListingAnalyticsMeta>>(
     INITIAL_LISTING_META
   );
@@ -268,13 +271,19 @@ export default function HomePage() {
     );
     if (savedProfile) setUserProfile(savedProfile);
 
-    try {
-      const rawRole = localStorage.getItem('tahator_role_v2');
-      if (rawRole) {
-        setUserRole(normalizeUserRole(rawRole));
+    const savedAuth = readJsonSafe<boolean>('tahator_auth_v2', (v) => typeof v === 'boolean');
+    if (savedAuth === true) {
+      setIsLoggedIn(true);
+      try {
+        const rawRole = localStorage.getItem('tahator_role_v2');
+        if (rawRole) {
+          setUserRole(normalizeUserRole(rawRole));
+        }
+      } catch {
+        // ignore storage errors
       }
-    } catch {
-      // ignore storage errors
+    } else {
+      setUserRole('user');
     }
 
     const savedWallet = readJsonSafe<number>(
@@ -300,9 +309,6 @@ export default function HomePage() {
 
     const savedRecentSearch = readJsonSafe<string[]>('tahator_recent_searches', Array.isArray);
     if (savedRecentSearch) setRecentSearches(savedRecentSearch);
-
-    const savedAuth = readJsonSafe<boolean>('tahator_auth_v2', (v) => typeof v === 'boolean');
-    if (savedAuth === true) setIsLoggedIn(true);
 
     const savedAssets = readJsonSafe<BarterAsset[]>('tahator_barter_assets_v2', Array.isArray);
     if (savedAssets) setBarterAssets(savedAssets);
@@ -446,6 +452,13 @@ export default function HomePage() {
   };
 
   const handleDeleteUserAd = (id: string, reason?: string) => {
+    const target = listings.find((item) => item.id === id);
+    if (target) {
+      setArchivedAds((prev) => [
+        { listing: target, reason: reason || 'حذف‌شده توسط کاربر', archivedAt: 'امروز' },
+        ...prev.filter((a) => a.listing.id !== id),
+      ]);
+    }
     setListings((prev) => {
       const next = prev.filter((item) => item.id !== id);
       persistSafe(
@@ -456,8 +469,25 @@ export default function HomePage() {
     });
     setMyAdIds((prev) => prev.filter((x) => x !== id));
     triggerToast(
-      reason ? `آگهی حذف شد (${reason})` : 'آگهی با موفقیت حذف شد'
+      reason ? `آگهی به آرشیو منتقل شد (${reason})` : 'آگهی به آرشیو منتقل شد'
     );
+  };
+
+  const handleRestoreArchivedAd = (id: string) => {
+    const archivedItem = archivedAds.find((a) => a.listing.id === id);
+    if (!archivedItem) return;
+    const restored: Listing = { ...archivedItem.listing, publishedAt: 'لحظاتی پیش' };
+    setListings((prev) => {
+      const next = [restored, ...prev.filter((l) => l.id !== id)];
+      persistSafe(
+        'tahator_user_ads',
+        next.filter((item) => item.isUserCreated)
+      );
+      return next;
+    });
+    setMyAdIds((prev) => (prev.includes(id) ? prev : [id, ...prev]));
+    setArchivedAds((prev) => prev.filter((a) => a.listing.id !== id));
+    triggerToast('آگهی از آرشیو بازنشر شد');
   };
 
   const handleTopUpWallet = (amount: number) => {
@@ -883,9 +913,11 @@ export default function HomePage() {
         recentSearches={recentSearches}
         onRecordSearch={handleRecordSearch}
         onSelectListing={handleSelectListing}
-        onSelectCategory={(cat, sub = null) =>
-          updateFilters({ category: cat, subcategory: sub || null })
-        }
+        onSelectCategory={(cat, sub = null) => {
+          setShowDashboardModal(false);
+          updateFilters({ category: cat, subcategory: sub || null });
+        }}
+        onLogoClick={() => setShowDashboardModal(false)}
         onOpenCategoriesModal={() => setShowCategoriesModal(true)}
         onOpenPostAd={() => setShowPostAdModal(true)}
         onOpenFacilities={() => setShowFacilitiesModal(true)}
@@ -893,11 +925,14 @@ export default function HomePage() {
         onOpenDashboardTab={(tab) => {
           setDashboardTab(tab);
           setShowDashboardModal(true);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenAuthModal={() => setShowAuthModal(true)}
         onLogout={() => {
           setIsLoggedIn(false);
+          setUserRole('user');
           persistSafe('tahator_auth_v2', false);
+          persistSafe('tahator_role_v2', 'user');
           triggerToast('از حساب کاربری خارج شدید');
         }}
         onOpenAiAssistant={() => {
@@ -918,8 +953,168 @@ export default function HomePage() {
         }
       />
 
-      {/* Mobile & Tablet Quick Category, City, Map, AI & Role Strip */}
-      <div className="xl:hidden border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-weaker)] px-3 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+      {showDashboardModal ? (
+        <UserDashboardModal
+          initialTab={dashboardTab}
+          isLoggedIn={isLoggedIn}
+          user={userProfile}
+          userRole={userRole}
+          onOpenAuthModal={() => setShowAuthModal(true)}
+          onLogout={() => {
+            setIsLoggedIn(false);
+            setUserRole('user');
+            persistSafe('tahator_auth_v2', false);
+            persistSafe('tahator_role_v2', 'user');
+            triggerToast('از حساب کاربری خارج شدید');
+          }}
+          onUpdateProfile={(partial) => {
+            setUserProfile((prev) => {
+              const next = { ...prev, ...partial };
+              persistSafe('tahator_profile_v2', next);
+              return next;
+            });
+          }}
+          onSwitchRole={handleSwitchRole}
+          onOpenRolePanel={() => setShowRolePanelModal(true)}
+          onOpenSupport={() => setShowSupportModal(true)}
+          walletBalance={walletBalance}
+          transactions={transactions}
+          onTopUpWallet={handleTopUpWallet}
+          allListings={listings}
+          myAds={myAds}
+          archivedAds={archivedAds}
+          onRestoreArchivedAd={handleRestoreArchivedAd}
+          listingMeta={listingMeta}
+          onOpenPostAd={() => setShowPostAdModal(true)}
+          onOpenFacilities={() => setShowFacilitiesModal(true)}
+          onOpenCompareWith={(ad) => {
+            setAiCompareListingId(ad.id);
+            setAiModalTab('compare');
+            setShowAiModal(true);
+          }}
+          onOpenAiTab={(aiTab) => {
+            setAiModalTab(aiTab);
+            setShowAiModal(true);
+          }}
+          onSelectListing={handleSelectListing}
+          onLadderAd={handleLadderAd}
+          onUrgentAd={handleUrgentAd}
+          onRenewAd={handleRenewAd}
+          onEditAd={handleEditAd}
+          onDeleteAd={handleDeleteUserAd}
+          barterAssets={barterAssets}
+          onAddBarterAsset={(asset) => {
+            const newAsset: BarterAsset = {
+              ...asset,
+              id: `ba-${Date.now()}`,
+              createdAt: 'امروز',
+            };
+            setBarterAssets((prev) => {
+              const next = [newAsset, ...prev];
+              persistSafe('tahator_barter_assets_v2', next);
+              return next;
+            });
+            triggerToast('دارایی جدید به سبد تهاتر شما اضافه شد');
+          }}
+          onDeleteBarterAsset={(id) => {
+            setBarterAssets((prev) => {
+              const next = prev.filter((a) => a.id !== id);
+              persistSafe('tahator_barter_assets_v2', next);
+              return next;
+            });
+            triggerToast('دارایی از سبد تهاتر حذف شد');
+          }}
+          barterOffers={barterOffers}
+          onRespondBarterOffer={(offerId, status) => {
+            setBarterOffers((prev) => {
+              const next = prev.map((o) => (o.id === offerId ? { ...o, status } : o));
+              persistSafe('tahator_offers_v2', next);
+              return next;
+            });
+            triggerToast(
+              status === 'accepted'
+                ? 'پیشنهاد معاوضه پذیرفته شد'
+                : 'پیشنهاد معاوضه رد شد'
+            );
+          }}
+          onOpenChatFromOffer={(offer) => {
+            const target = listings.find((l) => l.id === offer.listingId);
+            handleOpenChatWith(target, !target);
+          }}
+          installmentRequests={installmentRequests}
+          bookmarkedAds={bookmarkedAds}
+          onToggleBookmark={handleToggleBookmark}
+          notes={notes}
+          onSaveNote={handleSaveNote}
+          recentAds={recentAds}
+          onClearRecent={() => {
+            setRecentIds([]);
+            persistSafe('tahator_recent', []);
+            triggerToast('تاریخچه بازدیدهای اخیر پاک شد');
+          }}
+          savedSearches={savedSearches}
+          onToggleSavedSearchNotify={(id) => {
+            setSavedSearches((prev) => {
+              const next = prev.map((s) =>
+                s.id === id ? { ...s, notifyEnabled: !s.notifyEnabled } : s
+              );
+              persistSafe('tahator_searches_v2', next);
+              return next;
+            });
+          }}
+          onApplySavedSearch={(s) => {
+            setSearchQuery(s.query);
+            updateFilters({
+              category: s.category,
+              onlyExchange: s.onlyExchange,
+            });
+            triggerToast(`جستجوی «${s.title}» اجرا شد`);
+          }}
+          onDeleteSavedSearch={(id) => {
+            setSavedSearches((prev) => {
+              const next = prev.filter((s) => s.id !== id);
+              persistSafe('tahator_searches_v2', next);
+              return next;
+            });
+          }}
+          notifications={notifications}
+          onMarkNotificationsRead={() => {
+            setNotifications((prev) => {
+              const next = prev.map((n) => ({ ...n, read: true }));
+              persistSafe('tahator_notifications_v2', next);
+              return next;
+            });
+            triggerToast('همه اعلان‌ها به‌عنوان خوانده‌شده علامت‌گذاری شد');
+          }}
+          sessions={sessions}
+          onRevokeOtherSessions={() => {
+            setSessions((prev) => {
+              const next = prev.filter((s) => s.isCurrent);
+              persistSafe('tahator_sessions_v2', next);
+              return next;
+            });
+            triggerToast('سایر نشست‌های قدیمی از حساب شما خارج شدند');
+          }}
+          onSubmitSafetyReport={(subject, details) => {
+            const newReport: AdReport = {
+              id: `rep-${Date.now()}`,
+              listingId: 'safety-center',
+              listingTitle: `گزارش امنیتی کاربر: ${subject}`,
+              reason: subject,
+              details,
+              reporterRole: userRole,
+              status: 'open',
+              createdAt: 'لحظاتی پیش',
+            };
+            setAdReports((prev) => [newReport, ...prev]);
+            triggerToast('گزارش امنیتی در کارتابل نظارت ثبت شد');
+          }}
+          onClose={() => setShowDashboardModal(false)}
+        />
+      ) : (
+        <>
+          {/* Mobile & Tablet Quick Category, City, Map, AI & Role Strip */}
+          <div className="xl:hidden border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-weaker)] px-3 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
         {!isLoggedIn && (
           <button
             type="button"
@@ -976,14 +1171,16 @@ export default function HomePage() {
           <Sparkles className="w-3.5 h-3.5" />
           <span>هوش مصنوعی</span>
         </button>
-        <button
-          type="button"
-          onClick={() => setShowRolePanelModal(true)}
-          className="lg:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
-        >
-          <Shield className="w-3.5 h-3.5 text-[var(--brand-action)]" />
-          <span>نقش: {getRoleMeta(userRole).shortTitle}</span>
-        </button>
+        {isLoggedIn && userRole !== 'user' && (
+          <button
+            type="button"
+            onClick={() => setShowRolePanelModal(true)}
+            className="lg:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
+          >
+            <Shield className="w-3.5 h-3.5 text-[var(--brand-action)]" />
+            <span>پنل {getRoleMeta(userRole).shortTitle}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => updateFilters({ onlyExchange: !filters.onlyExchange })}
@@ -1400,16 +1597,23 @@ export default function HomePage() {
           )}
         </section>
       </main>
+        </>
+      )}
 
       {/* Mobile Bottom Navigation Bar — 5 Tabs */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 h-[62px] bg-[var(--surface-neutral-weaker)] border-t border-[var(--border-neutral-weaker)] flex items-center justify-around px-2">
         <button
           type="button"
           onClick={() => {
+            setShowDashboardModal(false);
             setFilters(DEFAULT_FILTERS);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className="flex flex-col items-center gap-0.5 text-[11px] text-[var(--brand-primary)] font-bold"
+          className={`flex flex-col items-center gap-0.5 text-[11px] ${
+            !showDashboardModal
+              ? 'text-[var(--brand-primary)] font-bold'
+              : 'text-[var(--content-neutral-default)]'
+          }`}
         >
           <Home className="w-5 h-5" />
           <span>آگهی‌ها</span>
@@ -1420,8 +1624,16 @@ export default function HomePage() {
           onClick={() => {
             setDashboardTab('bookmarks');
             setShowDashboardModal(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className="flex flex-col items-center gap-0.5 text-[11px] text-[var(--content-neutral-default)]"
+          className={`flex flex-col items-center gap-0.5 text-[11px] ${
+            showDashboardModal &&
+            (dashboardTab === 'bookmarks' ||
+              dashboardTab === 'notes' ||
+              dashboardTab === 'savedSearches')
+              ? 'text-[var(--brand-primary)] font-bold'
+              : 'text-[var(--content-neutral-default)]'
+          }`}
         >
           <Bookmark className="w-5 h-5" />
           <span>نشان‌ها</span>
@@ -1454,8 +1666,16 @@ export default function HomePage() {
           onClick={() => {
             setDashboardTab('overview');
             setShowDashboardModal(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className="flex flex-col items-center gap-0.5 text-[11px] text-[var(--content-neutral-default)]"
+          className={`flex flex-col items-center gap-0.5 text-[11px] ${
+            showDashboardModal &&
+            dashboardTab !== 'bookmarks' &&
+            dashboardTab !== 'notes' &&
+            dashboardTab !== 'savedSearches'
+              ? 'text-[var(--brand-primary)] font-bold'
+              : 'text-[var(--content-neutral-default)]'
+          }`}
         >
           <User className="w-5 h-5" />
           <span>{isLoggedIn ? 'تهاتر من' : 'ورود / من'}</span>
@@ -1612,162 +1832,6 @@ export default function HomePage() {
         />
       )}
 
-      {/* Complete User Dashboard Modal ("تهاتر من") */}
-      {showDashboardModal && (
-        <UserDashboardModal
-          initialTab={dashboardTab}
-          isLoggedIn={isLoggedIn}
-          user={userProfile}
-          userRole={userRole}
-          onOpenAuthModal={() => setShowAuthModal(true)}
-          onLogout={() => {
-            setIsLoggedIn(false);
-            persistSafe('tahator_auth_v2', false);
-            triggerToast('از حساب کاربری خارج شدید');
-          }}
-          onUpdateProfile={(partial) => {
-            setUserProfile((prev) => {
-              const next = { ...prev, ...partial };
-              persistSafe('tahator_profile_v2', next);
-              return next;
-            });
-          }}
-          onSwitchRole={handleSwitchRole}
-          onOpenRolePanel={() => setShowRolePanelModal(true)}
-          walletBalance={walletBalance}
-          transactions={transactions}
-          onTopUpWallet={handleTopUpWallet}
-          allListings={listings}
-          myAds={myAds}
-          listingMeta={listingMeta}
-          onOpenPostAd={() => setShowPostAdModal(true)}
-          onOpenFacilities={() => setShowFacilitiesModal(true)}
-          onOpenCompareWith={(ad) => {
-            setAiCompareListingId(ad.id);
-            setAiModalTab('compare');
-            setShowAiModal(true);
-          }}
-          onOpenAiTab={(aiTab) => {
-            setAiModalTab(aiTab);
-            setShowAiModal(true);
-          }}
-          onSelectListing={handleSelectListing}
-          onLadderAd={handleLadderAd}
-          onUrgentAd={handleUrgentAd}
-          onRenewAd={handleRenewAd}
-          onEditAd={handleEditAd}
-          onDeleteAd={handleDeleteUserAd}
-          barterAssets={barterAssets}
-          onAddBarterAsset={(asset) => {
-            const newAsset: BarterAsset = {
-              ...asset,
-              id: `ba-${Date.now()}`,
-              createdAt: 'امروز',
-            };
-            setBarterAssets((prev) => {
-              const next = [newAsset, ...prev];
-              persistSafe('tahator_barter_assets_v2', next);
-              return next;
-            });
-            triggerToast('دارایی جدید به سبد تهاتر شما اضافه شد');
-          }}
-          onDeleteBarterAsset={(id) => {
-            setBarterAssets((prev) => {
-              const next = prev.filter((a) => a.id !== id);
-              persistSafe('tahator_barter_assets_v2', next);
-              return next;
-            });
-            triggerToast('دارایی از سبد تهاتر حذف شد');
-          }}
-          barterOffers={barterOffers}
-          onRespondBarterOffer={(offerId, status) => {
-            setBarterOffers((prev) => {
-              const next = prev.map((o) => (o.id === offerId ? { ...o, status } : o));
-              persistSafe('tahator_offers_v2', next);
-              return next;
-            });
-            triggerToast(
-              status === 'accepted'
-                ? 'پیشنهاد معاوضه پذیرفته شد'
-                : 'پیشنهاد معاوضه رد شد'
-            );
-          }}
-          onOpenChatFromOffer={(offer) => {
-            const target = listings.find((l) => l.id === offer.listingId);
-            handleOpenChatWith(target, !target);
-          }}
-          installmentRequests={installmentRequests}
-          bookmarkedAds={bookmarkedAds}
-          onToggleBookmark={handleToggleBookmark}
-          notes={notes}
-          onSaveNote={handleSaveNote}
-          recentAds={recentAds}
-          onClearRecent={() => {
-            setRecentIds([]);
-            persistSafe('tahator_recent', []);
-            triggerToast('تاریخچه بازدیدهای اخیر پاک شد');
-          }}
-          savedSearches={savedSearches}
-          onToggleSavedSearchNotify={(id) => {
-            setSavedSearches((prev) => {
-              const next = prev.map((s) =>
-                s.id === id ? { ...s, notifyEnabled: !s.notifyEnabled } : s
-              );
-              persistSafe('tahator_searches_v2', next);
-              return next;
-            });
-          }}
-          onApplySavedSearch={(s) => {
-            setSearchQuery(s.query);
-            updateFilters({
-              category: s.category,
-              onlyExchange: s.onlyExchange,
-            });
-            triggerToast(`جستجوی «${s.title}» اجرا شد`);
-          }}
-          onDeleteSavedSearch={(id) => {
-            setSavedSearches((prev) => {
-              const next = prev.filter((s) => s.id !== id);
-              persistSafe('tahator_searches_v2', next);
-              return next;
-            });
-          }}
-          notifications={notifications}
-          onMarkNotificationsRead={() => {
-            setNotifications((prev) => {
-              const next = prev.map((n) => ({ ...n, read: true }));
-              persistSafe('tahator_notifications_v2', next);
-              return next;
-            });
-            triggerToast('همه اعلان‌ها به‌عنوان خوانده‌شده علامت‌گذاری شد');
-          }}
-          sessions={sessions}
-          onRevokeOtherSessions={() => {
-            setSessions((prev) => {
-              const next = prev.filter((s) => s.isCurrent);
-              persistSafe('tahator_sessions_v2', next);
-              return next;
-            });
-            triggerToast('سایر نشست‌های قدیمی از حساب شما خارج شدند');
-          }}
-          onSubmitSafetyReport={(subject, details) => {
-            const newReport: AdReport = {
-              id: `rep-${Date.now()}`,
-              listingId: 'safety-center',
-              listingTitle: `گزارش امنیتی کاربر: ${subject}`,
-              reason: subject,
-              details,
-              reporterRole: userRole,
-              status: 'open',
-              createdAt: 'لحظاتی پیش',
-            };
-            setAdReports((prev) => [newReport, ...prev]);
-            triggerToast('گزارش امنیتی در کارتابل نظارت ثبت شد');
-          }}
-          onClose={() => setShowDashboardModal(false)}
-        />
-      )}
-
       {/* Mobile OTP Registration / Login Modal */}
       {showAuthModal && (
         <AuthOtpModal
@@ -1785,13 +1849,15 @@ export default function HomePage() {
               lastLoginAt: 'هم‌اکنون',
               joinedAt: isNewUser ? 'امروز' : userProfile.joinedAt,
             };
+            const safeRole = normalizeUserRole(role);
             setUserProfile(nextProfile);
             setIsLoggedIn(true);
+            setUserRole(safeRole);
             persistSafe('tahator_profile_v2', nextProfile);
             persistSafe('tahator_auth_v2', true);
+            persistSafe('tahator_role_v2', safeRole);
 
             if (isNewUser) {
-              handleSwitchRole(role);
               const existingIdx = platformUsers.findIndex((u) => u.phone === phone);
               if (existingIdx === -1) {
                 const newAccount: PlatformUserAccount = {

@@ -26,6 +26,8 @@ import {
   ArrowLeftRight,
   Wallet,
   LayoutDashboard,
+  ChevronLeft,
+  User,
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -47,6 +49,7 @@ interface NavbarProps {
   onRecordSearch?: (term: string) => void;
   onSelectListing?: (listing: Listing) => void;
   onSelectCategory: (cat: string | null, sub?: string | null) => void;
+  onLogoClick?: () => void;
   onOpenCategoriesModal: () => void;
   onOpenPostAd: () => void;
   onOpenFacilities: () => void;
@@ -78,6 +81,7 @@ export default function Navbar({
   onRecordSearch,
   onSelectListing,
   onSelectCategory,
+  onLogoClick,
   onOpenCategoriesModal,
   onOpenPostAd,
   onOpenFacilities,
@@ -175,6 +179,7 @@ export default function Navbar({
             onClick={() => {
               onSelectCategory(null, null);
               onSearchChange('');
+              onLogoClick?.();
             }}
             className="flex items-center gap-1.5 sm:gap-2 shrink-0 pl-0.5 sm:pl-1.5 group cursor-pointer"
           >
@@ -418,18 +423,20 @@ export default function Navbar({
             <span className="whitespace-nowrap">هوش مصنوعی</span>
           </button>
 
-          {/* مرکز نقش‌ها (کاربر، کسب‌وکار، ناظر، پشتیبان، مدیر ارشد) */}
-          <button
-            type="button"
-            onClick={onOpenRolePanel}
-            className="hidden lg:inline-flex kt-button--ghost !px-2 text-[12px] shrink-0"
-            title="تغییر نقش و مشاهده پنل‌های مدیریتی و پشتیبانی"
-          >
-            <Shield className="w-4 h-4 text-[var(--brand-action)] shrink-0" />
-            <span className="whitespace-nowrap">نقش: {getRoleMeta(userRole).shortTitle}</span>
-          </button>
+          {/* پنل همکار/مدیریت (فقط در صورت ورود با نقش غیرعادی نمایش داده می‌شود) */}
+          {isLoggedIn && userRole !== 'user' && (
+            <button
+              type="button"
+              onClick={onOpenRolePanel}
+              className="hidden lg:inline-flex kt-button--ghost !px-2 text-[12px] shrink-0"
+              title="مشاهده پنل اختصاصی"
+            >
+              <Shield className="w-4 h-4 text-[var(--brand-action)] shrink-0" />
+              <span className="whitespace-nowrap">پنل {getRoleMeta(userRole).shortTitle}</span>
+            </button>
+          )}
 
-          {/* 📋 تهاتر من (منوی کشویی پروفایل + ورود با موبایل) */}
+          {/* 👤 تهاتر من (منوی کشویی پروفایل + ورود با موبایل) */}
           <div ref={userMenuRef} className="relative hidden md:block shrink-0">
             <button
               type="button"
@@ -437,7 +444,7 @@ export default function Navbar({
               className="inline-flex kt-button--ghost !px-2 relative shrink-0"
               aria-expanded={userMenuOpen}
             >
-              <ClipboardList className="w-4 h-4 text-[var(--content-neutral-default)] shrink-0" />
+              <User className="w-4 h-4 text-[var(--content-neutral-default)] shrink-0" />
               <span className="text-[12px] lg:text-[13px] max-w-[100px] truncate">
                 {isLoggedIn ? userName : 'تهاتر من'}
               </span>
@@ -456,7 +463,7 @@ export default function Navbar({
             </button>
 
             {userMenuOpen && (
-              <div className="absolute left-0 top-[44px] w-[278px] bg-white rounded-[8px] shadow-2xl border border-[var(--border-neutral-weaker)] z-50 overflow-hidden py-1">
+              <div className="absolute left-0 top-[44px] w-[268px] bg-white rounded-[8px] shadow-2xl border border-[var(--border-neutral-weaker)] z-50 overflow-hidden py-1">
                 {!isLoggedIn ? (
                   <>
                     <button
@@ -482,12 +489,12 @@ export default function Navbar({
                       type="button"
                       onClick={() => {
                         setUserMenuOpen(false);
-                        onOpenDashboardTab('settings');
+                        onOpenDashboardTab('business');
                       }}
                       className="w-full px-4 py-2.5 text-right text-[13px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2.5 border-b border-[var(--border-neutral-weaker)]"
                     >
                       <Star className="w-4 h-4 text-[var(--content-neutral-default)]" />
-                      <span>تهاتر حرفه‌ای (پنل کسب‌وکارها)</span>
+                      <span>حساب کسب‌وکار تهاتر</span>
                     </button>
 
                     <button
@@ -547,69 +554,110 @@ export default function Navbar({
                   </>
                 ) : (
                   <>
-                    <div className="px-4 py-3 bg-[var(--surface-neutral-subtle)] border-b border-[var(--border-neutral-weaker)] space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)] truncate">
-                          {userName}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[10px] font-bold">
-                          {getRoleMeta(userRole).shortTitle}
-                        </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        onOpenDashboardTab('overview');
+                      }}
+                      className="w-full px-4 py-3 text-right hover:bg-[var(--surface-neutral-weak)] border-b border-[var(--border-neutral-weaker)] flex items-center justify-between gap-2 transition-colors"
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <User className="w-4 h-4 text-[var(--content-neutral-default)] shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)] truncate flex items-center gap-1.5">
+                            <span>{userName}</span>
+                            {userRole !== 'user' && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[10px]">
+                                {getRoleMeta(userRole).shortTitle}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-[var(--content-neutral-default)] dir-ltr text-right mt-0.5">
+                            {toPersianDigits(userPhone)}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-[11px] text-[var(--content-neutral-default)]">
-                        <span className="dir-ltr">{toPersianDigits(userPhone)}</span>
-                        <span>کیف پول: {formatToman(walletBalance)}</span>
-                      </div>
-                    </div>
+                      <ChevronLeft className="w-4 h-4 text-[var(--content-neutral-default)] shrink-0" />
+                    </button>
 
                     {[
                       {
-                        tab: 'overview' as DashboardTab,
-                        label: 'نمای کلی پروفایل و داشبورد',
-                        icon: LayoutDashboard,
-                        badge: unreadNotifications > 0 ? unreadNotifications : null,
+                        tab: 'business' as DashboardTab,
+                        label: 'حساب کسب‌وکار تهاتر',
+                        icon: Star,
+                        badge: null,
+                        hint: null,
                       },
                       {
                         tab: 'profile' as DashboardTab,
-                        label: 'احراز هویت و مشخصات فردی',
+                        label: 'تأیید هویت',
                         icon: UserCheck,
                         badge: null,
+                        hint: null,
+                      },
+                      {
+                        tab: 'overview' as DashboardTab,
+                        label: 'نمای کلی و تطبیق هوشمند',
+                        icon: LayoutDashboard,
+                        badge: unreadNotifications > 0 ? unreadNotifications : null,
+                        hint: null,
                       },
                       {
                         tab: 'barterAssets' as DashboardTab,
-                        label: 'سبد دارایی‌های آماده تهاتر من',
+                        label: 'دارایی‌های آماده تهاتر من',
                         icon: Package,
                         badge: null,
-                      },
-                      {
-                        tab: 'myAds' as DashboardTab,
-                        label: 'آگهی‌های من',
-                        icon: ClipboardList,
-                        badge: null,
+                        hint: null,
                       },
                       {
                         tab: 'barterOffers' as DashboardTab,
                         label: 'معاوضه‌ها و تفاهم‌نامه‌ها',
                         icon: ArrowLeftRight,
                         badge: pendingOffersCount > 0 ? pendingOffersCount : null,
+                        hint: null,
+                      },
+                      {
+                        tab: 'myAds' as DashboardTab,
+                        label: 'آگهی‌های من',
+                        icon: ClipboardList,
+                        badge: null,
+                        hint: null,
                       },
                       {
                         tab: 'wallet' as DashboardTab,
-                        label: 'کیف پول و اقساط ۵۰/۵۰',
+                        label: 'کیف‌پول و پرداخت‌ها',
                         icon: Wallet,
                         badge: null,
+                        hint: formatToman(walletBalance),
                       },
                       {
                         tab: 'bookmarks' as DashboardTab,
-                        label: 'نشان‌ها، یادداشت‌ها و بازدیدها',
+                        label: 'نشان‌ها و یادداشت‌ها',
                         icon: Bookmark,
                         badge: bookmarkCount > 0 ? bookmarkCount : null,
+                        hint: null,
+                      },
+                      {
+                        tab: 'recent' as DashboardTab,
+                        label: 'بازدیدهای اخیر',
+                        icon: Clock,
+                        badge: null,
+                        hint: null,
                       },
                       {
                         tab: 'safety' as DashboardTab,
                         label: 'مقابله با مزاحمت و کلاهبرداری',
                         icon: ShieldAlert,
                         badge: null,
+                        hint: null,
+                      },
+                      {
+                        tab: 'settings' as DashboardTab,
+                        label: 'تنظیمات',
+                        icon: Settings,
+                        badge: null,
+                        hint: null,
                       },
                     ].map((row) => {
                       const Icon = row.icon;
@@ -621,45 +669,36 @@ export default function Navbar({
                             setUserMenuOpen(false);
                             onOpenDashboardTab(row.tab);
                           }}
-                          className="w-full px-4 py-2 text-right text-[12px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center justify-between"
+                          className="w-full px-4 py-2.5 text-right text-[12px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] border-b border-[var(--border-neutral-weaker)] flex items-center justify-between"
                         >
                           <span className="flex items-center gap-2.5">
                             <Icon className="w-4 h-4 text-[var(--content-neutral-default)]" />
                             <span>{row.label}</span>
                           </span>
-                          {row.badge !== null && (
+                          {row.badge !== null ? (
                             <span className="px-1.5 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[10px] font-bold">
                               {toPersianDigits(row.badge)}
                             </span>
-                          )}
+                          ) : row.hint ? (
+                            <span className="text-[10px] text-[var(--content-neutral-default)]">
+                              {row.hint}
+                            </span>
+                          ) : null}
                         </button>
                       );
                     })}
 
-                    <div className="border-t border-[var(--border-neutral-weaker)] mt-1 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUserMenuOpen(false);
-                          onOpenAuthModal();
-                        }}
-                        className="w-full px-4 py-2 text-right text-[12px] text-[var(--content-neutral-default)] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2.5"
-                      >
-                        <LogIn className="w-4 h-4" />
-                        <span>ورود با شماره موبایل جدید</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUserMenuOpen(false);
-                          onLogout();
-                        }}
-                        className="w-full px-4 py-2 text-right text-[12px] text-[var(--semantic-negative)] hover:bg-[var(--brand-soft)] flex items-center gap-2.5 font-medium"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>خروج از حساب کاربری</span>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full px-4 py-2.5 text-right text-[12px] text-[var(--semantic-negative)] hover:bg-[var(--brand-soft)] flex items-center gap-2.5 font-medium"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>خروج</span>
+                    </button>
                   </>
                 )}
               </div>

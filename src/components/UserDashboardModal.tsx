@@ -2,49 +2,38 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  X,
-  User,
-  Wallet,
-  FileText,
-  ArrowLeftRight,
-  Percent,
-  Bookmark,
-  StickyNote,
-  Clock,
-  Bell,
-  Settings,
-  ShieldCheck,
-  CheckCircle2,
-  TrendingUp,
-  Zap,
-  RefreshCw,
-  Edit3,
-  Trash2,
-  Sparkles,
-  Store,
-  Lock,
-  Eye,
-  PhoneCall,
-  MessageSquare,
-  Plus,
-  Search,
-  Check,
   AlertCircle,
+  ArrowLeftRight,
+  ArrowRight,
+  ArrowUpRight,
+  Award,
+  BellRing,
+  Bookmark,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  Clock,
+  FileText,
   LayoutDashboard,
-  Package,
-  ShieldAlert,
+  Lock,
   LogIn,
   LogOut,
-  Copy,
-  BellRing,
+  Monitor,
+  Moon,
+  Package,
+  Percent,
+  Settings,
+  ShieldAlert,
+  ShieldCheck,
   Smartphone,
-  Award,
-  ArrowUpRight,
+  Star,
+  Store,
+  Sun,
+  User,
+  Wallet,
 } from 'lucide-react';
-import { CATEGORIES, CITIES, Listing, formatToman, toPersianDigits } from '@/data/mockData';
-import { generateBarterAgreementDraft } from '@/lib/offlineAi';
+import { CITIES, Listing, formatToman, toPersianDigits } from '@/data/mockData';
 import {
-  AdModerationStatus,
   AuthSessionRecord,
   BarterAsset,
   BarterOffer,
@@ -60,6 +49,9 @@ import {
   WalletTransaction,
   computeProfileMetrics,
 } from '@/types/platform';
+import MyAdsSection, { ArchivedAdEntry } from '@/components/dashboard/MyAdsSection';
+import { BarterAssetsSection, BarterOffersSection } from '@/components/dashboard/BarterWorkflowSection';
+import BookmarksNotesSection from '@/components/dashboard/BookmarksNotesSection';
 
 interface UserDashboardModalProps {
   initialTab?: DashboardTab;
@@ -71,11 +63,14 @@ interface UserDashboardModalProps {
   onUpdateProfile: (partial: Partial<UserProfile>) => void;
   onSwitchRole: (role: UserRole) => void;
   onOpenRolePanel: () => void;
+  onOpenSupport?: () => void;
   walletBalance: number;
   transactions: WalletTransaction[];
   onTopUpWallet: (amount: number) => void;
   allListings: Listing[];
   myAds: Listing[];
+  archivedAds?: ArchivedAdEntry[];
+  onRestoreArchivedAd?: (id: string) => void;
   listingMeta: Record<string, ListingAnalyticsMeta>;
   onOpenPostAd: () => void;
   onOpenFacilities: () => void;
@@ -115,45 +110,35 @@ interface UserDashboardModalProps {
   onClose: () => void;
 }
 
-const NAV_ITEMS: {
-  id: DashboardTab;
-  label: string;
-  group: string;
-  icon: React.ComponentType<{ className?: string }>;
-}[] = [
-  { id: 'overview', label: 'نمای کلی پروفایل', group: 'حساب و مدیریت تهاتر', icon: LayoutDashboard },
-  { id: 'profile', label: 'حساب کاربری و احراز هویت', group: 'حساب و مدیریت تهاتر', icon: User },
-  { id: 'barterAssets', label: 'سبد دارایی‌های تهاتر من', group: 'حساب و مدیریت تهاتر', icon: Package },
-  { id: 'myAds', label: 'آگهی‌های من', group: 'حساب و مدیریت تهاتر', icon: FileText },
-  { id: 'barterOffers', label: 'معاوضه‌ها و تفاهم‌نامه‌ها', group: 'حساب و مدیریت تهاتر', icon: ArrowLeftRight },
-  { id: 'wallet', label: 'کیف پول و پرداخت‌ها', group: 'مالی و تسهیلات', icon: Wallet },
-  { id: 'installments', label: 'پرونده‌های اقساط ۵۰/۵۰', group: 'مالی و تسهیلات', icon: Percent },
-  { id: 'bookmarks', label: 'نشان‌ها', group: 'فعالیت‌ها و امنیت', icon: Bookmark },
-  { id: 'notes', label: 'یادداشت‌های من', group: 'فعالیت‌ها و امنیت', icon: StickyNote },
-  { id: 'recent', label: 'بازدیدهای اخیر', group: 'فعالیت‌ها و امنیت', icon: Clock },
-  { id: 'savedSearches', label: 'جستجوهای ذخیره‌شده', group: 'فعالیت‌ها و امنیت', icon: Bell },
-  { id: 'safety', label: 'مقابله با مزاحمت و امنیت', group: 'فعالیت‌ها و امنیت', icon: ShieldAlert },
-  { id: 'settings', label: 'فروشگاه من و تنظیمات', group: 'فعالیت‌ها و امنیت', icon: Settings },
-];
+type CanonicalTab = Exclude<DashboardTab, 'notes' | 'savedSearches'>;
 
-const STATUS_LABELS: Record<AdModerationStatus, { text: string; cls: string }> = {
-  published: {
-    text: 'منتشرشده',
-    cls: 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]',
-  },
-  pending: {
-    text: 'در انتظار تأیید',
-    cls: 'bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)]',
-  },
-  needs_edit: {
-    text: 'نیازمند اصلاح',
-    cls: 'bg-[var(--brand-soft)] text-[var(--brand-primary)]',
-  },
-  rejected: {
-    text: 'رد شده',
-    cls: 'bg-[var(--brand-soft)] text-[var(--semantic-negative)]',
-  },
+const normalizeTab = (t: DashboardTab): { tab: CanonicalTab; bookmarkSub: 'adsAndNotes' | 'searches' } => {
+  if (t === 'notes') return { tab: 'bookmarks', bookmarkSub: 'adsAndNotes' };
+  if (t === 'savedSearches') return { tab: 'bookmarks', bookmarkSub: 'searches' };
+  return { tab: t, bookmarkSub: 'adsAndNotes' };
 };
+
+interface NavRowConfig {
+  id: CanonicalTab;
+  label: string;
+  group: number;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const SIDEBAR_ITEMS: NavRowConfig[] = [
+  { id: 'business', label: 'حساب کسب‌وکار تهاتر', group: 1, icon: Star },
+  { id: 'profile', label: 'تأیید هویت', group: 1, icon: ShieldCheck },
+  { id: 'overview', label: 'نمای کلی و تطبیق هوشمند', group: 2, icon: LayoutDashboard },
+  { id: 'barterAssets', label: 'سبد دارایی‌های تهاتر من', group: 2, icon: Package },
+  { id: 'barterOffers', label: 'معاوضه‌ها و تفاهم‌نامه‌ها', group: 2, icon: ArrowLeftRight },
+  { id: 'myAds', label: 'آگهی‌های من', group: 2, icon: FileText },
+  { id: 'wallet', label: 'کیف‌پول و پرداخت‌ها', group: 3, icon: Wallet },
+  { id: 'installments', label: 'اقساط ۵۰/۵۰ و تسهیلات', group: 3, icon: Percent },
+  { id: 'bookmarks', label: 'نشان‌ها و یادداشت‌ها', group: 4, icon: Bookmark },
+  { id: 'recent', label: 'بازدیدهای اخیر', group: 4, icon: Clock },
+  { id: 'safety', label: 'مقابله با مزاحمت و کلاهبرداری', group: 5, icon: ShieldAlert },
+  { id: 'settings', label: 'تنظیمات', group: 5, icon: Settings },
+];
 
 export default function UserDashboardModal({
   initialTab = 'overview',
@@ -165,11 +150,14 @@ export default function UserDashboardModal({
   onUpdateProfile,
   onSwitchRole,
   onOpenRolePanel,
+  onOpenSupport,
   walletBalance,
   transactions,
   onTopUpWallet,
   allListings,
   myAds,
+  archivedAds = [],
+  onRestoreArchivedAd,
   listingMeta,
   onOpenPostAd,
   onOpenFacilities,
@@ -205,64 +193,46 @@ export default function UserDashboardModal({
   onSubmitSafetyReport,
   onClose,
 }: UserDashboardModalProps) {
-  const [tab, setTab] = useState<DashboardTab>(initialTab);
+  const initialMapped = normalizeTab(initialTab);
+  const [tab, setTab] = useState<CanonicalTab>(initialMapped.tab);
+  const [bookmarkSubTab, setBookmarkSubTab] = useState<'adsAndNotes' | 'searches'>(
+    initialMapped.bookmarkSub
+  );
+  // Tahator mobile UX: menu list first when entering My Tahator overview; direct content when deep-linking
+  const [mobileScreen, setMobileScreen] = useState<'menu' | 'content'>(
+    initialTab === 'overview' ? 'menu' : 'content'
+  );
 
-  // Profile form state
+  // Profile / KYC states
   const [profName, setProfName] = useState(user.name);
   const [profCity, setProfCity] = useState(user.city || 'تهران');
   const [profNationalId, setProfNationalId] = useState(user.nationalId || '');
   const [profIban, setProfIban] = useState(user.iban || '');
   const [profileSavedMsg, setProfileSavedMsg] = useState('');
+  const [showSimConfirm, setShowSimConfirm] = useState(false);
 
-  // Barter assets sub-states
-  const [assetTitle, setAssetTitle] = useState('');
-  const [assetCategory, setAssetCategory] = useState('وسایل نقلیه');
-  const [assetValue, setAssetValue] = useState('');
-  const [assetCondition, setAssetCondition] = useState<BarterAsset['condition']>('در حد نو');
-  const [assetCity, setAssetCity] = useState(user.city || 'تهران');
-  const [assetPref, setAssetPref] = useState('');
-  const [matchedAssetId, setMatchedAssetId] = useState<string | null>(null);
+  // Wallet states
+  const [customCharge, setCustomCharge] = useState('200000');
 
-  // Agreement draft preview modal inside Barter Offers
-  const [previewOfferAgreement, setPreviewOfferAgreement] = useState<BarterOffer | null>(null);
-  const [agreementCopied, setAgreementCopied] = useState(false);
-
-  // Safety report sub-states
+  // Safety states
+  const [reportCategory, setReportCategory] = useState<'harassment' | 'fraud'>('fraud');
   const [safetySubject, setSafetySubject] = useState('درخواست بیعانه پیش از رویت حضوری');
   const [safetyDetails, setSafetyDetails] = useState('');
   const [safetySubmittedMsg, setSafetySubmittedMsg] = useState('');
 
-  // Wallet custom top-up
-  const [customCharge, setCustomCharge] = useState('200000');
-
-  // My Ads sub-states
-  const [adStatusFilter, setAdStatusFilter] = useState<'all' | AdModerationStatus>('all');
-  const [editingAd, setEditingAd] = useState<Listing | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editPrice, setEditPrice] = useState('');
-  const [editExchange, setEditExchange] = useState(true);
-  const [editExchangeWith, setEditExchangeWith] = useState('');
-  const [editDesc, setEditDesc] = useState('');
-
-  const [deletingAdId, setDeletingAdId] = useState<string | null>(null);
-  const [deleteReason, setDeleteReason] = useState('در تهاتر آپ معامله/معاوضه شد');
-
-  // Barter offers sub-tab
-  const [offerDir, setOfferDir] = useState<'received' | 'sent'>('received');
-
-  // Notes inline edit
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [editingNoteText, setEditingNoteText] = useState('');
-
-  // Store & security settings
+  // Store & Settings states
   const [storeName, setStoreName] = useState(user.storeName || '');
   const [storeCity, setStoreCity] = useState(user.storeCity || 'تهران');
   const [storeBio, setStoreBio] = useState(user.storeBio || '');
   const [callHours, setCallHours] = useState(user.allowCallHours || '۹:۰۰ تا ۲۱:۰۰');
   const [settingsSavedMsg, setSettingsSavedMsg] = useState('');
+  const [businessSavedMsg, setBusinessSavedMsg] = useState('');
 
   useEffect(() => {
-    setTab(initialTab);
+    const mapped = normalizeTab(initialTab);
+    setTab(mapped.tab);
+    setBookmarkSubTab(mapped.bookmarkSub);
+    setMobileScreen(initialTab === 'overview' ? 'menu' : 'content');
   }, [initialTab]);
 
   useEffect(() => {
@@ -273,9 +243,10 @@ export default function UserDashboardModal({
     setStoreName(user.storeName || '');
     setStoreCity(user.storeCity || 'تهران');
     setStoreBio(user.storeBio || '');
+    setCallHours(user.allowCallHours || '۹:۰۰ تا ۲۱:۰۰');
   }, [user]);
 
-  const noteEntries = Object.entries(notes).filter(([, txt]) => txt.trim().length > 0);
+  const noteCount = Object.values(notes).filter((txt) => txt.trim().length > 0).length;
   const pendingOffersCount = barterOffers.filter(
     (o) => o.direction === 'received' && o.status === 'pending'
   ).length;
@@ -287,447 +258,657 @@ export default function UserDashboardModal({
     0
   );
 
-  const filteredMyAds = myAds.filter((ad) => {
-    if (adStatusFilter === 'all') return true;
-    const status = listingMeta[ad.id]?.moderationStatus || 'published';
-    return status === adStatusFilter;
-  });
+  const selectSidebarTab = (nextTab: CanonicalTab) => {
+    setTab(nextTab);
+    setMobileScreen('content');
+  };
 
-  const openEditorForAd = (ad: Listing) => {
-    setEditingAd(ad);
-    setEditTitle(ad.title);
-    setEditPrice(ad.price > 0 ? String(ad.price) : '');
-    setEditExchange(ad.hasExchange);
-    setEditExchangeWith(ad.exchangeWith || '');
-    setEditDesc(ad.description);
+  const activeNavMeta = SIDEBAR_ITEMS.find((i) => i.id === tab);
+
+  const getBadgeForItem = (id: CanonicalTab): number | null => {
+    if (id === 'overview' && unreadNotifCount > 0) return unreadNotifCount;
+    if (id === 'barterAssets' && barterAssets.length > 0) return barterAssets.length;
+    if (id === 'barterOffers' && pendingOffersCount > 0) return pendingOffersCount;
+    if (id === 'myAds' && myAds.length > 0) return myAds.length;
+    if (id === 'bookmarks' && bookmarkedAds.length + noteCount > 0)
+      return bookmarkedAds.length + noteCount;
+    return null;
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] flex items-center justify-center p-0 sm:p-4"
-      onClick={onClose}
+    <section
+      className="max-w-[1140px] w-full mx-auto px-3 sm:px-6 pt-4 pb-24 lg:pb-12 flex-1"
+      aria-label="پنل کاربری تهاتر من"
     >
-      <div
-        className="w-full max-w-[1060px] h-[100dvh] sm:h-[88vh] bg-[var(--surface-neutral-weaker)] sm:rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Top Dashboard Header */}
-        <div className="px-4 sm:px-6 py-3.5 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between gap-3 bg-[var(--surface-neutral-weaker)]">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] flex items-center justify-center shrink-0 font-bold">
-              <User className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[16px] sm:text-[18px] font-bold text-[var(--content-neutral-stronger)] truncate">
-                  تهاتر من — داشبورد کاربری
-                </h2>
-                <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
-                  نقش: {getRoleMeta(userRole).shortTitle}
-                </span>
-                {user.isVerified && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[11px] font-bold">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>هویت تأییدشده</span>
-                  </span>
-                )}
-              </div>
-              <div className="text-[12px] text-[var(--content-neutral-default)] truncate mt-0.5">
-                {isLoggedIn
-                  ? `${user.name} · ${toPersianDigits(user.phone)} · اعتبار کیف پول: ${formatToman(walletBalance)}`
-                  : 'حالت پیش‌نمایش مهمان (برای ذخیره دائمی وارد شوید)'}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenRolePanel();
-              }}
-              className="hidden sm:inline-flex kt-button--outlined !h-[34px] !px-3 text-[12px]"
-            >
-              <ShieldCheck className="w-4 h-4 text-[var(--brand-action)]" />
-              <span>مرکز نقش‌ها ({getRoleMeta(userRole).shortTitle})</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-9 h-9 rounded-full hover:bg-[var(--surface-neutral-weak)] flex items-center justify-center"
-              aria-label="بستن داشبورد"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Auth Bar if not logged in */}
-        {!isLoggedIn && (
-          <div className="px-4 sm:px-6 py-3 bg-[var(--brand-soft)]/80 border-b border-[var(--border-neutral-weaker)] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-white text-[var(--brand-primary)] flex items-center justify-center shrink-0 shadow-sm">
-                <Smartphone className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-[13px] font-bold text-[var(--brand-primary)]">
-                  برای مدیریت کامل پروفایل، آگهی‌ها و تهاترهای خود با شماره موبایل وارد شوید
-                </div>
-                <div className="text-[11px] text-[var(--content-neutral-default)]">
-                  بدون نیاز به پنل پیامکی: کد تایید ۶ رقمی روی صفحه نمایش داده می‌شود و با یک کلیک وارد می‌شوید.
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenAuthModal}
-              className="kt-button--primary !h-[36px] !px-4 text-[12px] font-bold shrink-0"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>ورود / عضویت با موبایل</span>
-            </button>
-          </div>
+      {/* Top Breadcrumb Navigation */}
+      <div className="mb-4 flex items-center justify-between gap-2">
+        {mobileScreen === 'content' ? (
+          <button
+            type="button"
+            onClick={() => setMobileScreen('menu')}
+            className="lg:hidden inline-flex items-center gap-1.5 text-[13px] font-bold text-[var(--content-neutral-stronger)] hover:text-[var(--brand-primary)]"
+          >
+            <ArrowRight className="w-4 h-4" />
+            <span>بازگشت به فهرست تهاتر من</span>
+            <span className="text-[var(--content-neutral-default)] font-normal">
+              / {activeNavMeta?.label}
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onClose}
+            className="lg:hidden inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--content-neutral-default)] hover:text-[var(--brand-primary)]"
+          >
+            <ArrowRight className="w-4 h-4" />
+            <span>بازگشت به صفحه آگهی‌ها</span>
+          </button>
         )}
 
-        {/* Mobile Horizontal Tabs */}
-        <div className="lg:hidden flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-neutral-weaker)] overflow-x-auto no-scrollbar bg-[var(--surface-neutral-subtle)]">
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = tab === item.id;
-            return (
+        <button
+          type="button"
+          onClick={onClose}
+          className="hidden lg:inline-flex items-center gap-1.5 text-[13px] text-[var(--content-neutral-default)] hover:text-[var(--brand-primary)] transition-colors"
+        >
+          <ArrowRight className="w-4 h-4" />
+          <span>بازگشت به همه آگهی‌ها</span>
+        </button>
+
+        {isLoggedIn && userRole !== 'user' && (
+          <button
+            type="button"
+            onClick={onOpenRolePanel}
+            className="kt-button--outlined !h-[32px] !px-3 text-[12px]"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-[var(--brand-action)]" />
+            <span>پنل {getRoleMeta(userRole).shortTitle}</span>
+          </button>
+        )}
+      </div>
+
+      {/* Exact Tahator 2-Column Workspace Layout (#F5F5F5 Sidebar Right + White Content Pane Left) */}
+      <div className="flex flex-col lg:flex-row items-start gap-6 lg:gap-10">
+        {/* RIGHT NAVIGATION SIDEBAR (Full-width menu on mobile when mobileScreen==='menu', fixed 292px card on lg+) */}
+        <aside
+          className={`w-full lg:w-[292px] shrink-0 ${
+            mobileScreen === 'content' ? 'hidden lg:block' : 'block'
+          }`}
+        >
+          <div className="bg-[#F5F5F5] rounded-[8px] border border-[#EBEBEB] overflow-hidden">
+            {/* User Header Block (Clickable to Overview) */}
+            <div className="p-4 border-b border-[#E5E5E5]">
               <button
-                key={item.id}
                 type="button"
-                onClick={() => setTab(item.id)}
-                className={`shrink-0 h-[32px] px-3 rounded-full text-[12px] flex items-center gap-1.5 border transition-colors ${
-                  active
-                    ? 'bg-[var(--brand-action)] text-white border-[var(--brand-action)] font-bold'
-                    : 'bg-white border-[var(--border-neutral-weaker)] text-[var(--content-neutral-stronger)]'
-                }`}
+                onClick={() => selectSidebarTab('overview')}
+                className="w-full text-right flex items-start justify-between gap-2 group"
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Main 2-Column Dashboard Body */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0">
-          {/* Desktop Right Sidebar (RTL Start - 3 cols) */}
-          <aside className="hidden lg:flex lg:col-span-3 flex-col border-l border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] p-3 overflow-y-auto">
-            <div className="space-y-1 flex-1">
-              {NAV_ITEMS.map((item, idx) => {
-                const Icon = item.icon;
-                const active = tab === item.id;
-                const showGroupHeader = idx === 0 || NAV_ITEMS[idx - 1].group !== item.group;
-                let countBadge: number | null = null;
-                if (item.id === 'overview' && unreadNotifCount > 0) countBadge = unreadNotifCount;
-                if (item.id === 'barterAssets' && barterAssets.length > 0) countBadge = barterAssets.length;
-                if (item.id === 'myAds') countBadge = myAds.length;
-                if (item.id === 'barterOffers' && pendingOffersCount > 0) countBadge = pendingOffersCount;
-                if (item.id === 'bookmarks') countBadge = bookmarkedAds.length;
-                if (item.id === 'notes' && noteEntries.length > 0) countBadge = noteEntries.length;
-                if (item.id === 'savedSearches') countBadge = savedSearches.length;
-
-                return (
-                  <React.Fragment key={item.id}>
-                    {showGroupHeader && (
-                      <div className="px-2.5 pt-2.5 pb-1 text-[10px] font-bold text-[var(--content-neutral-default)]">
-                        {item.group}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setTab(item.id)}
-                      className={`w-full px-3 py-2 rounded-[6px] text-[12.5px] flex items-center justify-between transition-colors ${
-                        active
-                          ? 'bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold'
-                          : 'text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)]'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2.5 truncate">
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{item.label}</span>
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <User className="w-5 h-5 text-[var(--content-neutral-default)] shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[14px] font-bold text-[var(--content-neutral-stronger)] truncate group-hover:text-[var(--brand-primary)] transition-colors">
+                        {isLoggedIn ? user.name : 'کاربر مهمان تهاتر آپ'}
                       </span>
-                      {countBadge !== null && (
-                        <span
-                          className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] flex items-center justify-center ${
-                            active
-                              ? 'bg-[var(--brand-action)] text-white'
-                              : 'bg-[var(--surface-neutral-weaker)] border border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
-                          }`}
-                        >
-                          {toPersianDigits(countBadge)}
-                        </span>
+                      {user.isVerified && !user.simOwnershipRevoked && (
+                        <CheckCircle2
+                          className="w-4 h-4 text-[var(--semantic-positive)] shrink-0"
+                          aria-label="هویت تاییدشده"
+                        />
                       )}
-                    </button>
-                  </React.Fragment>
-                );
-              })}
-            </div>
+                    </div>
+                    <div className="text-[12px] text-[#757575] mt-1 dir-ltr text-right">
+                      {isLoggedIn ? toPersianDigits(user.phone) : 'حساب موبایل متصل نشده'}
+                    </div>
+                  </div>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-[#999999] shrink-0 mt-1" />
+              </button>
 
-            {/* Sidebar Wallet Summary + Quick Role Switch */}
-            <div className="pt-3 mt-3 border-t border-[var(--border-neutral-weaker)] space-y-2.5">
-              <div className="p-3 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
-                <div className="text-[11px] text-[var(--content-neutral-default)]">
-                  موجودی کیف پول
-                </div>
-                <div className="text-[15px] font-extrabold text-[var(--brand-primary)] mt-0.5">
-                  {formatToman(walletBalance)}
-                </div>
+              {!isLoggedIn && (
                 <button
                   type="button"
-                  onClick={() => setTab('wallet')}
-                  className="mt-2 w-full h-[30px] rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[12px] font-bold hover:opacity-90"
+                  onClick={onOpenAuthModal}
+                  className="mt-3 w-full kt-button--primary !h-[36px] text-[12px] font-bold"
                 >
-                  + افزایش اعتبار
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>ورود / عضویت با موبایل</span>
                 </button>
-              </div>
+              )}
+            </div>
 
+            {/* Grouped Tahator Menu Rows */}
+            <nav aria-label="منوی حساب کاربری تهاتر من">
+              {SIDEBAR_ITEMS.map((item, idx) => {
+                const Icon = item.icon;
+                const active = tab === item.id;
+                const badge = getBadgeForItem(item.id);
+                const startsNewGroup = idx > 0 && SIDEBAR_ITEMS[idx - 1].group !== item.group;
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectSidebarTab(item.id)}
+                    className={`w-full px-4 py-3.5 text-right flex items-center justify-between gap-2 transition-colors hover:bg-[#ECECEC] ${
+                      startsNewGroup
+                        ? 'border-t-[6px] border-t-white'
+                        : idx > 0
+                        ? 'border-t border-[#E6E6E6]'
+                        : ''
+                    }`}
+                  >
+                    <span className="flex items-center gap-3 min-w-0">
+                      <Icon
+                        className={`w-[18px] h-[18px] shrink-0 ${
+                          active ? 'text-[var(--brand-primary)]' : 'text-[#666666]'
+                        }`}
+                      />
+                      <span
+                        className={`text-[13.5px] truncate ${
+                          active
+                            ? 'text-[var(--brand-primary)] font-bold'
+                            : 'text-[var(--content-neutral-stronger)] font-normal'
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                    </span>
+
+                    <span className="flex items-center gap-2 shrink-0">
+                      {badge !== null && (
+                        <span
+                          className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center ${
+                            active
+                              ? 'bg-[var(--brand-action)] text-white'
+                              : 'bg-white text-[var(--content-neutral-stronger)] border border-[#E0E0E0]'
+                          }`}
+                        >
+                          {toPersianDigits(badge)}
+                        </span>
+                      )}
+                      {item.id === 'profile' && (!user.isVerified || user.simOwnershipRevoked) && (
+                        <span className="w-2 h-2 rounded-full bg-[var(--semantic-warning)]" />
+                      )}
+                      <ChevronLeft
+                        className={`w-4 h-4 ${
+                          active ? 'text-[var(--brand-primary)]' : 'text-[#9E9E9E]'
+                        }`}
+                      />
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* Logout / Login Row at Bottom */}
               {isLoggedIn && (
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="w-full kt-button--outlined !h-[34px] text-[12px] text-[var(--semantic-negative)]"
+                  className="w-full px-4 py-3.5 text-right flex items-center justify-between gap-2 border-t-[6px] border-t-white hover:bg-[#ECECEC] transition-colors"
                 >
-                  خروج از حساب کاربری
+                  <span className="flex items-center gap-3 text-[var(--semantic-negative)] font-medium text-[13.5px]">
+                    <LogOut className="w-[18px] h-[18px] shrink-0" />
+                    <span>خروج</span>
+                  </span>
+                  <ChevronLeft className="w-4 h-4 text-[#9E9E9E]" />
                 </button>
               )}
-            </div>
-          </aside>
+            </nav>
+          </div>
 
-          {/* Main Left Panel (9 cols) */}
-          <div className="lg:col-span-9 p-4 sm:p-6 overflow-y-auto space-y-5 bg-[var(--surface-neutral-weaker)]">
-            {/* TAB 0: OVERVIEW & MEMBER TRUST SUMMARY */}
-            {tab === 'overview' && (
-              <div className="space-y-5">
-                {/* Identity & Trust Score Hero Card */}
-                <div className="p-4 sm:p-5 rounded-[10px] border border-[var(--border-neutral-weaker)] bg-gradient-to-l from-[var(--brand-soft)]/50 to-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-14 h-14 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-[20px] font-extrabold shrink-0 shadow-sm">
-                      {isLoggedIn ? (user.name?.trim().charAt(0) || 'ت') : '؟'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-[16px] sm:text-[18px] font-bold text-[var(--content-neutral-stronger)] truncate">
-                          {isLoggedIn ? user.name : 'کاربر مهمان تهاتر آپ'}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
-                          {getRoleMeta(userRole).shortTitle}
-                        </span>
-                        {user.isVerified ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[11px] font-bold">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>احراز هویت تاییدشده</span>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setTab('profile')}
-                            className="px-2 py-0.5 rounded-full bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[11px] font-bold hover:underline"
-                          >
-                            نیازمند تکمیل احراز هویت
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-[12px] text-[var(--content-neutral-default)] mt-1 flex flex-wrap items-center gap-3">
-                        <span className="dir-ltr">
-                          {isLoggedIn ? toPersianDigits(user.phone) : 'شماره موبایل ثبت نشده'}
-                        </span>
-                        <span>· شهر: {user.city || 'تهران'}</span>
-                        <span>· عضویت: {user.joinedAt}</span>
-                      </div>
-                    </div>
+          {/* Subtle Footer Micro-Links Underneath Sidebar Card (Matching Tahator Desktop) */}
+          <div className="hidden lg:flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-4 px-2 text-[11px] text-[#757575]">
+            <button
+              type="button"
+              onClick={() => selectSidebarTab('business')}
+              className="hover:text-[var(--brand-primary)]"
+            >
+              درباره تهاتر آپ
+            </button>
+            <button
+              type="button"
+              onClick={() => selectSidebarTab('safety')}
+              className="hover:text-[var(--brand-primary)]"
+            >
+              قوانین معاملات امن
+            </button>
+            <button
+              type="button"
+              onClick={() => (onOpenSupport ? onOpenSupport() : selectSidebarTab('safety'))}
+              className="hover:text-[var(--brand-primary)]"
+            >
+              پشتیبانی و داوری
+            </button>
+          </div>
+        </aside>
+
+        {/* LEFT MAIN CONTENT WORKSPACE */}
+        <div
+          className={`flex-1 min-w-0 w-full ${
+            mobileScreen === 'menu' ? 'hidden lg:block' : 'block'
+          }`}
+        >
+          {/* Compact Guest Sign-In Reminder Banner */}
+          {!isLoggedIn && (
+            <div className="mb-5 p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Smartphone className="w-5 h-5 text-[var(--brand-primary)] shrink-0" />
+                <div>
+                  <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                    برای ذخیره دائمی آگهی‌ها، پیشنهادهای تهاتر و احراز هویت وارد شوید
                   </div>
-
-                  <div className="flex items-center gap-3 shrink-0 bg-white px-4 py-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)]">
-                    <Award className="w-6 h-6 text-[var(--semantic-positive)] shrink-0" />
-                    <div>
-                      <div className="text-[11px] text-[var(--content-neutral-default)]">
-                        امتیاز اعتماد تهاتر
-                      </div>
-                      <div className="text-[16px] font-extrabold text-[var(--semantic-positive)]">
-                        {toPersianDigits(profileMetrics.trustScore)} از ۱۰۰
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Profile Completeness Checklist */}
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
-                      وضعیت تکمیل پروفایل برای معاملات امن و اقساط ۵۰/۵۰ ({toPersianDigits(profileMetrics.completionPercent)}٪)
-                    </span>
-                    <div className="w-full sm:w-48 h-2 rounded-full bg-[var(--surface-neutral-weak)] overflow-hidden">
-                      <div
-                        className="h-full bg-[var(--semantic-positive)] transition-all"
-                        style={{ width: `${profileMetrics.completionPercent}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                    {profileMetrics.checks.map((chk) => (
-                      <button
-                        key={chk.id}
-                        type="button"
-                        onClick={() => {
-                          if (chk.id === 'phone' && !isLoggedIn) {
-                            onOpenAuthModal();
-                          } else {
-                            setTab(chk.targetTab);
-                          }
-                        }}
-                        className={`px-3 py-2 rounded-[6px] border text-[12px] flex items-center justify-between gap-2 text-right transition-colors ${
-                          chk.done
-                            ? 'bg-[var(--semantic-positive-soft)]/50 border-[var(--semantic-positive)]/30 text-[var(--semantic-positive)]'
-                            : 'bg-[var(--surface-neutral-subtle)] border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[var(--content-neutral-stronger)]'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 truncate">
-                          {chk.done ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                          ) : (
-                            <AlertCircle className="w-3.5 h-3.5 text-[var(--brand-action)] shrink-0" />
-                          )}
-                          <span className="truncate">{chk.label}</span>
-                        </span>
-                        {!chk.done && <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 4 Quick KPI Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setTab('myAds')}
-                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
-                  >
-                    <div className="text-[11px] text-[var(--content-neutral-default)]">آگهی‌های فعال من</div>
-                    <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
-                      {toPersianDigits(myAds.length)} آگهی
-                    </div>
-                    <div className="text-[11px] text-[var(--brand-primary)] mt-1">
-                      {toPersianDigits(totalAdViews)} بازدید ۷ روز اخیر
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTab('barterAssets')}
-                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
-                  >
-                    <div className="text-[11px] text-[var(--content-neutral-default)]">سبد دارایی‌های تهاتر</div>
-                    <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
-                      {toPersianDigits(barterAssets.length)} دارایی
-                    </div>
-                    <div className="text-[11px] text-[var(--semantic-positive)] mt-1 truncate">
-                      ارزش: {formatToman(totalAssetValue)}
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTab('barterOffers')}
-                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
-                  >
-                    <div className="text-[11px] text-[var(--content-neutral-default)]">معاوضه و اقساط ۵۰/۵۰</div>
-                    <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
-                      {toPersianDigits(pendingOffersCount)} در انتظار
-                    </div>
-                    <div className="text-[11px] text-[var(--content-neutral-default)] mt-1">
-                      {toPersianDigits(installmentRequests.length)} پرونده تسهیلات فعال
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTab('wallet')}
-                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
-                  >
-                    <div className="text-[11px] text-[var(--content-neutral-default)]">اعتبار کیف پول</div>
-                    <div className="text-[16px] sm:text-[18px] font-extrabold text-[var(--brand-primary)] mt-1 truncate">
-                      {formatToman(walletBalance)}
-                    </div>
-                    <div className="text-[11px] text-[var(--semantic-info)] mt-1">شارژ آنی شاپرک +</div>
-                  </button>
-                </div>
-
-                {/* Notifications & Quick Actions */}
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--content-neutral-stronger)]">
-                      <BellRing className="w-4 h-4 text-[var(--brand-action)]" />
-                      <span>اعلان‌ها و رویدادهای هوشمند پروفایل ({toPersianDigits(unreadNotifCount)} جدید)</span>
-                    </div>
-                    {unreadNotifCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={onMarkNotificationsRead}
-                        className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline"
-                      >
-                        همه خوانده شد
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    {notifications.map((n) => (
-                      <div
-                        key={n.id}
-                        className={`p-3 rounded-[6px] border text-[12px] flex items-start justify-between gap-3 ${
-                          n.read
-                            ? 'bg-[var(--surface-neutral-subtle)] border-[var(--border-neutral-weaker)]'
-                            : 'bg-[var(--brand-soft)]/50 border-[var(--brand-action)]/30'
-                        }`}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="font-bold text-[var(--content-neutral-stronger)] flex items-center gap-1.5">
-                            {!n.read && <span className="w-2 h-2 rounded-full bg-[var(--brand-action)] shrink-0" />}
-                            <span>{n.title}</span>
-                          </div>
-                          <p className="text-[11px] text-[var(--content-neutral-default)] leading-5">
-                            {n.description}
-                          </p>
-                        </div>
-                        <span className="text-[10px] text-[var(--content-neutral-default)] shrink-0">
-                          {n.time}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="text-[11px] text-[var(--content-neutral-default)]">
+                    کد تایید ۶ رقمی بدون نیاز به سرویس پیامکی روی صفحه نمایش داده می‌شود.
                   </div>
                 </div>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="kt-button--primary !h-[34px] !px-4 text-[12px] shrink-0"
+              >
+                ورود با موبایل
+              </button>
+            </div>
+          )}
 
-            {/* TAB 1: PROFILE & VERIFICATION */}
-            {tab === 'profile' && (
-              <div className="space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[var(--border-neutral-weaker)]">
-                  <div>
-                    <h3 className="text-[17px] font-bold text-[var(--content-neutral-stronger)]">
-                      حساب کاربری و تأیید هویت (احراز اصالت)
-                    </h3>
-                    <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                      کاربران احراز هویت‌شده اعتماد بالاتری در معاملات تهاتر و اقساط ۵۰/۵۰ دریافت می‌کنند.
-                    </p>
+          {/* TAB: OVERVIEW (نمای کلی و تطبیق هوشمند) */}
+          {tab === 'overview' && (
+            <div className="space-y-6">
+              {/* Calm Tahator Profile Summary Header */}
+              <div className="p-5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-12 h-12 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-[18px] font-bold shrink-0">
+                    {isLoggedIn ? user.name?.trim().charAt(0) || 'ت' : 'م'}
                   </div>
-                  <span className="text-[12px] text-[var(--content-neutral-default)]">
-                    عضویت از: {user.joinedAt}
-                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-[17px] font-bold text-[var(--content-neutral-stronger)] truncate">
+                        {isLoggedIn ? user.name : 'کاربر مهمان تهاتر آپ'}
+                      </h2>
+                      {isLoggedIn && (
+                        <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
+                          {userRole === 'user' ? 'حساب کاربری شخصی' : getRoleMeta(userRole).shortTitle}
+                        </span>
+                      )}
+                      {user.isVerified && !user.simOwnershipRevoked ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[11px] font-bold">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>تأیید هویت شده</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => selectSidebarTab('profile')}
+                          className="px-2 py-0.5 rounded-full bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[11px] font-bold hover:underline"
+                        >
+                          نیازمند تکمیل تأیید هویت
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-[12px] text-[var(--content-neutral-default)] mt-1 flex flex-wrap items-center gap-3">
+                      <span className="dir-ltr">
+                        {isLoggedIn ? toPersianDigits(user.phone) : 'شماره موبایل ثبت نشده'}
+                      </span>
+                      <span>· شهر: {user.city || 'تهران'}</span>
+                      <span>· عضویت: {user.joinedAt}</span>
+                    </div>
+                  </div>
                 </div>
 
-                {profileSavedMsg && (
-                  <div className="p-3 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[13px] font-medium flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{profileSavedMsg}</span>
+                <div className="flex items-center gap-3 shrink-0 bg-white px-4 py-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)]">
+                  <Award className="w-6 h-6 text-[var(--semantic-positive)] shrink-0" />
+                  <div>
+                    <div className="text-[11px] text-[var(--content-neutral-default)]">
+                      امتیاز اعتماد تهاتر
+                    </div>
+                    <div className="text-[16px] font-extrabold text-[var(--semantic-positive)]">
+                      {toPersianDigits(profileMetrics.trustScore)} از ۱۰۰
+                    </div>
                   </div>
-                )}
+                </div>
+              </div>
 
+              {/* Completeness Checklist */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                    آمادگی حساب برای معاملات تهاتر و اقساط ۵۰/۵۰ ({toPersianDigits(profileMetrics.completionPercent)}٪)
+                  </span>
+                  <div className="w-full sm:w-48 h-2 rounded-full bg-[var(--surface-neutral-weak)] overflow-hidden">
+                    <div
+                      className="h-full bg-[var(--semantic-positive)] transition-all"
+                      style={{ width: `${profileMetrics.completionPercent}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                  {profileMetrics.checks.map((chk) => (
+                    <button
+                      key={chk.id}
+                      type="button"
+                      onClick={() => {
+                        if (chk.id === 'phone' && !isLoggedIn) {
+                          onOpenAuthModal();
+                        } else {
+                          selectSidebarTab(normalizeTab(chk.targetTab).tab);
+                        }
+                      }}
+                      className={`px-3 py-2 rounded-[6px] border text-[12px] flex items-center justify-between gap-2 text-right transition-colors ${
+                        chk.done
+                          ? 'bg-[var(--semantic-positive-soft)]/45 border-[var(--semantic-positive)]/30 text-[var(--semantic-positive)]'
+                          : 'bg-[var(--surface-neutral-subtle)] border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[var(--content-neutral-stronger)]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        {chk.done ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-[var(--brand-action)] shrink-0" />
+                        )}
+                        <span className="truncate">{chk.label}</span>
+                      </span>
+                      {!chk.done && <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4 Core KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <button
+                  type="button"
+                  onClick={() => selectSidebarTab('myAds')}
+                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                >
+                  <div className="text-[11px] text-[var(--content-neutral-default)]">آگهی‌های جاری من</div>
+                  <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
+                    {toPersianDigits(myAds.length)} آگهی
+                  </div>
+                  <div className="text-[11px] text-[var(--brand-primary)] mt-1">
+                    {toPersianDigits(totalAdViews)} بازدید ۷ روز اخیر
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => selectSidebarTab('barterAssets')}
+                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                >
+                  <div className="text-[11px] text-[var(--content-neutral-default)]">سبد دارایی‌های تهاتر</div>
+                  <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
+                    {toPersianDigits(barterAssets.length)} دارایی
+                  </div>
+                  <div className="text-[11px] text-[var(--semantic-positive)] mt-1 truncate">
+                    ارزش: {formatToman(totalAssetValue)}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => selectSidebarTab('barterOffers')}
+                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                >
+                  <div className="text-[11px] text-[var(--content-neutral-default)]">معاوضه‌ها و اقساط</div>
+                  <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
+                    {toPersianDigits(pendingOffersCount)} در انتظار
+                  </div>
+                  <div className="text-[11px] text-[var(--content-neutral-default)] mt-1">
+                    {toPersianDigits(installmentRequests.length)} پرونده ۵۰/۵۰ فعال
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => selectSidebarTab('wallet')}
+                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                >
+                  <div className="text-[11px] text-[var(--content-neutral-default)]">اعتبار کیف پول</div>
+                  <div className="text-[16px] sm:text-[18px] font-extrabold text-[var(--brand-primary)] mt-1 truncate">
+                    {formatToman(walletBalance)}
+                  </div>
+                  <div className="text-[11px] text-[var(--semantic-info)] mt-1">شارژ و فاکتور رسمی</div>
+                </button>
+              </div>
+
+              {/* Notifications List */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    <BellRing className="w-4 h-4 text-[var(--brand-action)]" />
+                    <span>اعلان‌ها و رویدادهای حساب ({toPersianDigits(unreadNotifCount)} جدید)</span>
+                  </div>
+                  {unreadNotifCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={onMarkNotificationsRead}
+                      className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline"
+                    >
+                      همه خوانده شد
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-3 rounded-[6px] border text-[12px] flex items-start justify-between gap-3 ${
+                        n.read
+                          ? 'bg-[var(--surface-neutral-subtle)] border-[var(--border-neutral-weaker)]'
+                          : 'bg-[var(--brand-soft)]/45 border-[var(--brand-action)]/30'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-[var(--content-neutral-stronger)] flex items-center gap-1.5">
+                          {!n.read && <span className="w-2 h-2 rounded-full bg-[var(--brand-action)] shrink-0" />}
+                          <span>{n.title}</span>
+                        </div>
+                        <p className="text-[11px] text-[var(--content-neutral-default)] leading-5">
+                          {n.description}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-[var(--content-neutral-default)] shrink-0">
+                        {n.time}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: TAHATOR BUSINESS / SHOWROOM PARTNER (Adapted for Barter & 50/50) */}
+          {tab === 'business' && (
+            <div className="space-y-6">
+              <div className="pb-3 border-b border-[var(--border-neutral-weaker)]">
+                <div className="text-[11px] text-[var(--content-neutral-default)] mb-1">
+                  حساب کسب‌وکار تهاتر &gt; نمایشگاه، آژانس و فروشگاه همکار
+                </div>
+                <h2 className="text-[18px] font-bold text-[var(--content-neutral-stronger)]">
+                  اگر نمایشگاه خودرو، دفتر املاک یا فروشگاه تهاتری دارید
+                </h2>
+              </div>
+
+              {businessSavedMsg && (
+                <div className="p-3 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[13px] flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{businessSavedMsg}</span>
+                </div>
+              )}
+
+              {/* 3 Tahator Clean Benefit Rows Adapted to Tahator */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] space-y-1.5">
+                  <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    گزارش تبدیل معاوضه
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] leading-5">
+                    آمار دقیق بازدید، نمایش شماره، شروع گفتگو و پیشنهادهای تهاتر هر آگهی را ببینید.
+                  </p>
+                </div>
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] space-y-1.5">
+                  <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    پیش‌تأیید اقساط ۵۰/۵۰
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] leading-5">
+                    روی همه آگهی‌های نمایشگاه خود نشان رسمی معاوضه با ۵۰٪ تهاتر و ۵۰٪ اقساط دریافت کنید.
+                  </p>
+                </div>
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] space-y-1.5">
+                  <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    ویترین اختصاصی و تیم فروش
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] leading-5">
+                    صفحه نمایشگاه یا آژانس خود را با بیوگرافی، شهر فعالیت و کارشناسان فروش مدیریت کنید.
+                  </p>
+                </div>
+              </div>
+
+              {/* Business Store Form */}
+              <div className="p-5 rounded-[8px] border border-[var(--border-neutral-weaker)] space-y-4">
+                <div className="flex items-center gap-2 text-[14px] font-bold">
+                  <Store className="w-4 h-4 text-[var(--brand-primary)]" />
+                  <span>مشخصات فروشگاه، آژانس املاک یا نمایشگاه</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[12px] mb-1">نام نمایشگاه / فروشگاه / برند</label>
+                    <input
+                      type="text"
+                      value={storeName}
+                      onChange={(e) => setStoreName(e.target.value)}
+                      placeholder="مثلاً: اتوگالری تهاتر پایتخت"
+                      className="kt-input !h-[38px] text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] mb-1">شهر فعالیت</label>
+                    <input
+                      type="text"
+                      value={storeCity}
+                      onChange={(e) => setStoreCity(e.target.value)}
+                      className="kt-input !h-[38px] text-[13px]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[12px] mb-1">زمینه فعالیت و شرایط تهاتر فروشگاه</label>
+                  <textarea
+                    rows={3}
+                    value={storeBio}
+                    onChange={(e) => setStoreBio(e.target.value)}
+                    placeholder="معاوضه خودروهای کارشناسی‌شده با ملک مسکونی و پرداخت مابه‌التفاوت اقساطی..."
+                    className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[13px]"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateProfile({
+                        storeName,
+                        storeCity,
+                        storeBio,
+                      });
+                      setBusinessSavedMsg('مشخصات حساب کسب‌وکار تهاتر با موفقیت ذخیره شد.');
+                      setTimeout(() => setBusinessSavedMsg(''), 3500);
+                    }}
+                    className="kt-button--primary !h-[36px] !px-5 text-[13px]"
+                  >
+                    ذخیره اطلاعات کسب‌وکار
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: IDENTITY CONFIRMATION (تأیید هویت — Exact Tahator Screenshot Fidelity!) */}
+          {tab === 'profile' && (
+            <div className="space-y-6">
+              {profileSavedMsg && (
+                <div className="p-3 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[13px] font-medium flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{profileSavedMsg}</span>
+                </div>
+              )}
+
+              {/* Tahator Verified State vs Unverified */}
+              {user.isVerified && !user.simOwnershipRevoked ? (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="text-[16px] font-bold text-[var(--semantic-positive)]">
+                      تأیید هویت شده
+                    </h2>
+                    <p className="text-[13px] text-[var(--content-neutral-stronger)] mt-2">
+                      تأیید هویت شما در {user.verifiedAt || '۱۴۰۵/۰۸'} از طریق کد ملی و شماره موبایل انجام شد.
+                    </p>
+                  </div>
+
+                  <div className="border-t border-[var(--border-neutral-weaker)] pt-5 space-y-2.5">
+                    <h3 className="text-[15px] font-bold text-[var(--content-neutral-stronger)]">
+                      تغییر مالکیت سیم‌کارت
+                    </h3>
+                    <p className="text-[13px] text-[var(--content-neutral-stronger)] leading-6">
+                      در صورتی که سیم‌کارت را تازه خریده‌اید و یا قصد فروش دارید، حتماً تغییر مالکیت آن را اعلام کنید. در غیر این صورت، عواقب هرگونه تخلف مالک قبلی یا جدید، بر عهدهٔ شما است.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowSimConfirm((prev) => !prev)}
+                      className="w-full py-3 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between text-[13.5px] font-bold text-[var(--content-neutral-stronger)] hover:text-[var(--brand-primary)] transition-colors"
+                    >
+                      <span>اعلام تغییر مالکیت سیم‌کارت</span>
+                      <ChevronLeft className="w-4 h-4 text-[#888]" />
+                    </button>
+
+                    {showSimConfirm && (
+                      <div className="p-3.5 rounded-[8px] border border-[var(--semantic-warning)]/40 bg-[var(--semantic-warning-soft)]/50 space-y-2.5">
+                        <p className="text-[12px] text-[var(--content-neutral-stronger)]">
+                          با تایید این مورد، نشان تایید هویت فعلی لغو می‌شود و می‌توانید شماره موبایل یا کد ملی جدید را ثبت کنید.
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowSimConfirm(false)}
+                            className="kt-button--outlined !h-[32px] !px-3 text-[12px]"
+                          >
+                            انصراف
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateProfile({
+                                isVerified: false,
+                                simOwnershipRevoked: true,
+                              });
+                              setShowSimConfirm(false);
+                              setProfileSavedMsg('تغییر مالکیت سیم‌کارت ثبت شد. لطفاً احراز هویت جدید را تکمیل کنید.');
+                            }}
+                            className="kt-button--primary !h-[32px] !px-4 text-[12px]"
+                          >
+                            ثبت تغییر مالکیت سیم‌کارت
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-[8px] border border-[var(--semantic-warning)]/40 bg-[var(--semantic-warning-soft)]/40 space-y-2">
+                  <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    تأیید هویت هنوز تکمیل نشده است
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] leading-6">
+                    برای دریافت نشان «تأیید هویت شده»، صدور تفاهم‌نامه تهاتر امن و امکان ثبت درخواست اقساط ۵۰/۵۰، کد ملی ۱۰ رقمی خود را وارد کنید.
+                  </p>
+                </div>
+              )}
+
+              {/* Editable Identity & Settlement Form */}
+              <div className="border-t border-[var(--border-neutral-weaker)] pt-5">
+                <h3 className="text-[14px] font-bold text-[var(--content-neutral-stronger)] mb-4">
+                  مشخصات هویتی و حساب تسویه امن تهاتر
+                </h3>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -738,10 +919,12 @@ export default function UserDashboardModal({
                       nationalId: profNationalId.trim(),
                       iban: profIban.trim(),
                       isVerified: verified,
+                      simOwnershipRevoked: false,
+                      verifiedAt: verified ? user.verifiedAt || 'امروز (۱۴۰۵/۰۸)' : user.verifiedAt,
                     });
                     setProfileSavedMsg(
                       verified
-                        ? 'اطلاعات ذخیره شد و نشان «هویت تأییدشده» برای حساب شما فعال گردید.'
+                        ? 'اطلاعات ذخیره شد و نشان «تأیید هویت شده» برای حساب شما فعال گردید.'
                         : 'اطلاعات حساب ذخیره شد (برای دریافت نشان تأیید هویت، کد ملی ۱۰ رقمی وارد کنید).'
                     );
                     setTimeout(() => setProfileSavedMsg(''), 4000);
@@ -791,7 +974,7 @@ export default function UserDashboardModal({
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium mb-1">
-                      کد ملی (جهت احراز هویت آنلاین)
+                      کد ملی (جهت احراز هویت)
                     </label>
                     <input
                       type="text"
@@ -801,9 +984,9 @@ export default function UserDashboardModal({
                       className="kt-input text-left dir-ltr"
                     />
                   </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     <label className="block text-[13px] font-medium mb-1">
-                      شماره شبا یا کارت (جهت تسویه امن تهاتر)
+                      شماره شبا یا کارت (جهت دریافت مابه‌التفاوت نقدی تهاتر)
                     </label>
                     <input
                       type="text"
@@ -817,7 +1000,7 @@ export default function UserDashboardModal({
                     <button type="submit" className="kt-button--primary !px-6">
                       ذخیره و بررسی احراز هویت
                     </button>
-                    {!user.isVerified && (
+                    {(!user.isVerified || user.simOwnershipRevoked) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -825,6 +1008,8 @@ export default function UserDashboardModal({
                           onUpdateProfile({
                             nationalId: '0019876543',
                             isVerified: true,
+                            simOwnershipRevoked: false,
+                            verifiedAt: 'امروز (۱۴۰۵/۰۸)',
                           });
                           setProfileSavedMsg('احراز هویت آزمایشی با موفقیت تایید و نشان سبز فعال شد.');
                         }}
@@ -835,30 +1020,618 @@ export default function UserDashboardModal({
                     )}
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
 
-                {/* Role Switcher Card inside Profile */}
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
-                        نقش‌های کاربری و دسترسی‌های مدیریتی سامانه
+          {/* TAB: BARTER ASSETS INVENTORY */}
+          {tab === 'barterAssets' && (
+            <BarterAssetsSection
+              user={user}
+              allListings={allListings}
+              barterAssets={barterAssets}
+              onUpdateProfile={onUpdateProfile}
+              onAddBarterAsset={onAddBarterAsset}
+              onDeleteBarterAsset={onDeleteBarterAsset}
+              onSelectListing={onSelectListing}
+              onOpenAiTab={onOpenAiTab}
+              onClose={onClose}
+            />
+          )}
+
+          {/* TAB: MY ADS (Exact Tahator 3-Tab Structure: جاری | نیمه‌کاره | آرشیو) */}
+          {tab === 'myAds' && (
+            <MyAdsSection
+              myAds={myAds}
+              archivedAds={archivedAds}
+              listingMeta={listingMeta}
+              onOpenPostAd={onOpenPostAd}
+              onSelectListing={onSelectListing}
+              onLadderAd={onLadderAd}
+              onUrgentAd={onUrgentAd}
+              onRenewAd={onRenewAd}
+              onEditAd={onEditAd}
+              onDeleteAd={onDeleteAd}
+              onRestoreArchivedAd={onRestoreArchivedAd}
+              onClose={onClose}
+            />
+          )}
+
+          {/* TAB: BARTER OFFERS & AGREEMENTS */}
+          {tab === 'barterOffers' && (
+            <BarterOffersSection
+              allListings={allListings}
+              barterOffers={barterOffers}
+              onRespondBarterOffer={onRespondBarterOffer}
+              onOpenChatFromOffer={onOpenChatFromOffer}
+              onClose={onClose}
+            />
+          )}
+
+          {/* TAB: WALLET & PAYMENTS (Exact Tahator Audit #5 Elements Included) */}
+          {tab === 'wallet' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-[18px] font-bold text-[var(--content-neutral-stronger)]">
+                  کیف‌پول و پرداخت‌ها
+                </h2>
+                <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
+                  مدیریت اعتبار کیف‌پول برای نردبان، برچسب فوری و تاریخچه پرداخت‌ها
+                </p>
+              </div>
+
+              {/* Tahator 72-Hour Refund Banner */}
+              <div className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] flex items-start gap-2.5 text-[12.5px] text-[var(--content-neutral-stronger)]">
+                <AlertCircle className="w-4 h-4 text-[var(--brand-primary)] shrink-0 mt-0.5" />
+                <span>
+                  در صورت کسر پول در پرداخت‌های ناموفق، مبلغ حداکثر تا ۷۲ ساعت به حساب یا کیف پول شما برمی‌گردد.
+                </span>
+              </div>
+
+              <div className="p-5 rounded-[8px] bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-action)] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="text-[12px] opacity-90">موجودی فعلی کیف پول تهاتر آپ</div>
+                  <div className="text-[24px] font-extrabold mt-1">
+                    {formatToman(walletBalance)}
+                  </div>
+                  <div className="text-[11px] opacity-85 mt-1">
+                    قابل استفاده برای نردبان، فوری، تمدید آگهی و استعلام کارشناسی
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[100_000, 250_000, 500_000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => onTopUpWallet(amt)}
+                      className="px-3 py-2 rounded-[6px] bg-white/15 hover:bg-white/25 text-white text-[12px] font-bold transition-colors"
+                    >
+                      + {formatToman(amt)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <label className="text-[13px] font-medium shrink-0">
+                  شارژ مبلغ دلخواه (تومان):
+                </label>
+                <input
+                  type="number"
+                  min={10000}
+                  step={50000}
+                  value={customCharge}
+                  onChange={(e) => setCustomCharge(e.target.value)}
+                  className="kt-input sm:max-w-[220px] text-left dir-ltr"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const val = Number(customCharge) || 0;
+                    if (val >= 10_000) onTopUpWallet(val);
+                  }}
+                  className="kt-button--primary !px-5"
+                >
+                  پرداخت و افزایش اعتبار
+                </button>
+              </div>
+
+              {/* Auto Official Invoice Row */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[13.5px] font-bold text-[var(--content-neutral-stronger)]">
+                    صدور خودکار فاکتور رسمی
+                  </div>
+                  <div className="text-[11.5px] text-[var(--content-neutral-default)] mt-0.5">
+                    ارسال خودکار فاکتور رسمی برای پرداخت‌های نردبان و خدمات کسب‌وکار با کد ملی ثبت‌شده
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(user.autoOfficialInvoice)}
+                  onChange={(e) => onUpdateProfile({ autoOfficialInvoice: e.target.checked })}
+                  className="w-4 h-4 accent-[var(--brand-action)] cursor-pointer shrink-0"
+                  aria-label="صدور خودکار فاکتور رسمی"
+                />
+              </div>
+
+              <div>
+                <h3 className="text-[14px] font-bold text-[var(--content-neutral-stronger)] mb-3">
+                  تاریخچهٔ پرداخت‌ها و تراکنش‌ها
+                </h3>
+                <div className="border border-[var(--border-neutral-weaker)] rounded-[8px] divide-y divide-[var(--border-neutral-weaker)]">
+                  {transactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="p-3.5 flex items-center justify-between gap-3 text-[13px]"
+                    >
+                      <div>
+                        <div className="font-medium text-[var(--content-neutral-stronger)]">
+                          {tx.title}
+                        </div>
+                        <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
+                          {tx.date} · وضعیت: {tx.status}
+                        </div>
                       </div>
-                      <div className="text-[12px] text-[var(--content-neutral-default)]">
-                        می‌توانید برای بررسی عملکرد سایت، نقش خود را بین کاربر، کسب‌وکار، ناظر، پشتیبان و مدیر ارشد تغییر دهید.
+                      <div
+                        className={`font-bold shrink-0 ${
+                          tx.type === 'credit'
+                            ? 'text-[var(--semantic-positive)]'
+                            : 'text-[var(--brand-primary)]'
+                        }`}
+                      >
+                        {tx.type === 'credit' ? '+' : '-'} {formatToman(tx.amount)}
                       </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: 50/50 INSTALLMENTS */}
+          {tab === 'installments' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[var(--border-neutral-weaker)]">
+                <div>
+                  <h2 className="text-[18px] font-bold text-[var(--content-neutral-stronger)]">
+                    اقساط ۵۰/۵۰ و تسهیلات تهاتر
+                  </h2>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
+                    پوشش ۵۰٪ ارزش معامله با کالا یا ملک و تقسیط ۵۰٪ باقیمانده
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenFacilities();
+                  }}
+                  className="kt-button--outlined !h-[34px] text-[12px]"
+                >
+                  محاسبه آنلاین سود و قسط
+                </button>
+              </div>
+
+              {installmentRequests.map((req) => (
+                <div
+                  key={req.id}
+                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-[14px]">{req.listingTitle}</span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[11px] font-bold">
+                      {req.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px] pt-1">
+                    <div className="p-2 rounded bg-[var(--surface-neutral-subtle)]">
+                      <div className="text-[var(--content-neutral-default)]">ارزش کل</div>
+                      <div className="font-bold mt-0.5">{formatToman(req.totalAmount)}</div>
+                    </div>
+                    <div className="p-2 rounded bg-[var(--surface-neutral-subtle)]">
+                      <div className="text-[var(--content-neutral-default)]">سهم تهاتر</div>
+                      <div className="font-bold mt-0.5">{formatToman(req.barterCoveredAmount)}</div>
+                    </div>
+                    <div className="p-2 rounded bg-[var(--surface-neutral-subtle)]">
+                      <div className="text-[var(--content-neutral-default)]">مبلغ تسهیلات</div>
+                      <div className="font-bold mt-0.5">{formatToman(req.loanAmount)}</div>
+                    </div>
+                    <div className="p-2 rounded bg-[var(--brand-soft)] text-[var(--brand-primary)]">
+                      <div>قسط ماهیانه ({toPersianDigits(req.months)} ماه)</div>
+                      <div className="font-extrabold mt-0.5">{formatToman(req.monthlyInstallment)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* TAB: BOOKMARKS, NOTES & SAVED SEARCHES (Combined 2-Tab Tahator Hub) */}
+          {tab === 'bookmarks' && (
+            <BookmarksNotesSection
+              initialSubTab={bookmarkSubTab}
+              bookmarkedAds={bookmarkedAds}
+              allListings={allListings}
+              notes={notes}
+              savedSearches={savedSearches}
+              onSelectListing={onSelectListing}
+              onOpenCompareWith={onOpenCompareWith}
+              onToggleBookmark={onToggleBookmark}
+              onSaveNote={onSaveNote}
+              onToggleSavedSearchNotify={onToggleSavedSearchNotify}
+              onApplySavedSearch={onApplySavedSearch}
+              onDeleteSavedSearch={onDeleteSavedSearch}
+              onClose={onClose}
+            />
+          )}
+
+          {/* TAB: RECENT VIEWS */}
+          {tab === 'recent' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[var(--border-neutral-weaker)]">
+                <div>
+                  <h2 className="text-[18px] font-bold text-[var(--content-neutral-stronger)]">
+                    بازدیدهای اخیر ({toPersianDigits(recentAds.length)})
+                  </h2>
+                </div>
+                {recentAds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClearRecent}
+                    className="kt-button--outlined !h-[32px] !px-3 text-[12px] text-[var(--semantic-negative)]"
+                  >
+                    حذف تاریخچه
+                  </button>
+                )}
+              </div>
+              {recentAds.length === 0 ? (
+                <p className="py-12 text-center text-[13px] text-[var(--content-neutral-default)]">
+                  هنوز آگهی‌ای را مشاهده نکرده‌اید.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {recentAds.map((ad) => (
+                    <div
+                      key={ad.id}
+                      onClick={() => {
+                        onSelectListing(ad);
+                        onClose();
+                      }}
+                      className="p-3 rounded-[8px] border border-[var(--border-neutral-weaker)] flex items-center gap-3 cursor-pointer hover:bg-[var(--surface-neutral-weak)] transition-colors"
+                    >
+                      <img
+                        src={ad.images[0] || '/ads/fake-1.svg'}
+                        alt={ad.title}
+                        className="w-14 h-14 rounded-[4px] object-cover shrink-0 border border-[var(--border-neutral-weaker)]"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[13.5px] font-bold truncate">{ad.title}</div>
+                        <div className="text-[11.5px] text-[var(--content-neutral-default)] mt-0.5">
+                          {ad.city} · {ad.neighborhood}
+                        </div>
+                        <div className="text-[12px] font-bold text-[var(--brand-primary)] mt-0.5">
+                          {ad.price > 0 ? formatToman(ad.price) : 'توافقی'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: SAFETY, ANTI-FRAUD & ACTIVE SESSIONS (Exact Tahator Split) */}
+          {tab === 'safety' && (
+            <div className="space-y-6">
+              <div className="pb-3 border-b border-[var(--border-neutral-weaker)]">
+                <h2 className="text-[18px] font-bold text-[var(--content-neutral-stronger)]">
+                  مقابله با مزاحمت و کلاهبرداری
+                </h2>
+                <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
+                  راهنمای معامله امن تهاتر، ثبت فوری گزارش تخلف و کنترل نشست‌های ورود حساب موبایل
+                </p>
+              </div>
+
+              {/* Exact Tahator 2-Card Guide Adapted for Tahator */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] space-y-2">
+                  <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    تهاتر بدون مزاحمت
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] leading-6">
+                    در تنظیمات می‌توانید نمایش شماره تماس در چت را پنهان کرده و ساعات مجاز پاسخگویی را محدود کنید یا کاربران مزاحم را مسدود نمایید.
+                  </p>
+                </div>
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA] space-y-2">
+                  <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    تهاتر بدون کلاهبرداری
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] leading-6">
+                    پیش از رویت حضوری کالا، استعلام اصالت سند (`my.ssaa.ir`) و تنظیم تفاهم‌نامه، هیچ مبلغی به‌عنوان بیعانه واریز نکنید.
+                  </p>
+                </div>
+              </div>
+
+              {/* Report Toggle Buttons Matching Tahator: گزارش مزاحمت | گزارش کلاهبرداری */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!safetyDetails.trim()) return;
+                  onSubmitSafetyReport(safetySubject, safetyDetails.trim());
+                  setSafetyDetails('');
+                  setSafetySubmittedMsg(
+                    'گزارش امنیتی شما ثبت شد و تیم نظارت تهاتر آپ به‌سرعت رسیدگی می‌کند.'
+                  );
+                  setTimeout(() => setSafetySubmittedMsg(''), 4000);
+                }}
+                className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3"
+              >
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReportCategory('fraud');
+                      setSafetySubject('درخواست بیعانه پیش از رویت حضوری');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-[6px] text-[12px] font-bold border transition-colors ${
+                      reportCategory === 'fraud'
+                        ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)]'
+                        : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                    }`}
+                  >
+                    گزارش کلاهبرداری و رفتار مشکوک
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReportCategory('harassment');
+                      setSafetySubject('مزاحمت تلفنی یا پیام نامتعارف');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-[6px] text-[12px] font-bold border transition-colors ${
+                      reportCategory === 'harassment'
+                        ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)]'
+                        : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                    }`}
+                  >
+                    گزارش مزاحمت
+                  </button>
+                </div>
+
+                {safetySubmittedMsg && (
+                  <div className="p-2.5 rounded bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-medium">
+                    {safetySubmittedMsg}
+                  </div>
+                )}
+
+                <select
+                  value={safetySubject}
+                  onChange={(e) => setSafetySubject(e.target.value)}
+                  className="kt-input !h-[38px] text-[12px] bg-white"
+                >
+                  <option value="درخواست بیعانه پیش از رویت حضوری">
+                    درخواست بیعانه پیش از رویت حضوری
+                  </option>
+                  <option value="ارسال لینک جعلی یا فیشینگ در چت">
+                    ارسال لینک جعلی یا فیشینگ در چت
+                  </option>
+                  <option value="مزاحمت تلفنی یا پیام نامتعارف">
+                    مزاحمت تلفنی یا پیام نامتعارف
+                  </option>
+                  <option value="عدم تطابق کالا یا سند جعلی">
+                    عدم تطابق کالا یا سند جعلی
+                  </option>
+                </select>
+                <textarea
+                  rows={2}
+                  value={safetyDetails}
+                  onChange={(e) => setSafetyDetails(e.target.value)}
+                  placeholder="شماره تماس متخلف، کد آگهی یا شرح دقیق ماجرا را بنویسید..."
+                  className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[12px]"
+                />
+                <div className="flex justify-end">
+                  <button type="submit" className="kt-button--primary !h-[36px] !px-4 text-[12px]">
+                    ارسال گزارش به تیم امنیت
+                  </button>
+                </div>
+              </form>
+
+              {/* Active Mobile Sessions */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[13.5px] font-bold text-[var(--content-neutral-stronger)]">
+                    دستگاه‌ها و نشست‌های فعال ({toPersianDigits(sessions.length)})
+                  </div>
+                  {sessions.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenRolePanel();
-                      }}
-                      className="kt-button--primary !h-[34px] !px-4 text-[12px]"
+                      onClick={onRevokeOtherSessions}
+                      className="text-[11px] font-bold text-[var(--semantic-negative)] hover:underline"
                     >
-                      باز کردن پنل اختصاصی {getRoleMeta(userRole).shortTitle}
+                      خروج از سایر دستگاه‌ها
                     </button>
-                  </div>
+                  )}
+                </div>
+                <div className="divide-y divide-[var(--border-neutral-weaker)] border border-[var(--border-neutral-weaker)] rounded-[6px]">
+                  {sessions.map((s) => (
+                    <div key={s.id} className="p-3 flex items-center justify-between gap-2 text-[12px]">
+                      <div>
+                        <div className="font-bold text-[var(--content-neutral-stronger)]">
+                          {s.deviceLabel}
+                        </div>
+                        <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
+                          {s.loginMethod} · شماره: <span className="dir-ltr">{s.phoneMasked}</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          s.isCurrent
+                            ? 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
+                            : 'bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-default)]'
+                        }`}
+                      >
+                        {s.time}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
+          {/* TAB: SETTINGS (Exact Tahator Settings Structure + Quiet Collapsible Role Tester) */}
+          {tab === 'settings' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-[18px] font-bold text-[var(--content-neutral-stronger)]">
+                  تنظیمات
+                </h2>
+                <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
+                  تنظیم ظاهر برنامه، پیشنهادهای هوشمند تهاتر، حریم خصوصی و تاریخچه بازدیدها
+                </p>
+              </div>
+
+              {settingsSavedMsg && (
+                <div className="p-3 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[13px] flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{settingsSavedMsg}</span>
+                </div>
+              )}
+
+              {/* Tahator Appearance Selector (ظاهر برنامه: سیستم | روز | شب) */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] space-y-3">
+                <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                  ظاهر برنامه
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'system' as const, label: 'هماهنگ با سیستم', icon: Monitor },
+                    { id: 'light' as const, label: 'روز (روشن)', icon: Sun },
+                    { id: 'dark' as const, label: 'شب (تاریک)', icon: Moon },
+                  ].map((th) => {
+                    const ThIcon = th.icon;
+                    const active = (user.uiTheme || 'light') === th.id;
+                    return (
+                      <button
+                        key={th.id}
+                        type="button"
+                        onClick={() => onUpdateProfile({ uiTheme: th.id })}
+                        className={`p-2.5 rounded-[6px] border text-[12px] flex items-center justify-center gap-1.5 transition-colors ${
+                          active
+                            ? 'border-[var(--brand-action)] bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold'
+                            : 'border-[var(--border-neutral-weaker)] bg-white hover:bg-[var(--surface-neutral-weak)]'
+                        }`}
+                      >
+                        <ThIcon className="w-4 h-4 shrink-0" />
+                        <span>{th.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Privacy & Smart Barter Recommendations */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] space-y-3.5">
+                <div className="flex items-center gap-2 text-[14px] font-bold">
+                  <Lock className="w-4 h-4 text-[var(--brand-primary)]" />
+                  <span>آگهی‌های پیشنهادی، حریم خصوصی و تماس</span>
+                </div>
+                <label className="flex items-center justify-between gap-2 text-[13px] cursor-pointer">
+                  <span>پیشنهاد آگهی‌ها و تهاترهای هوشمند بر اساس بازدیدها و سبد دارایی من</span>
+                  <input
+                    type="checkbox"
+                    checked={user.personalizedFeed !== false}
+                    onChange={(e) => onUpdateProfile({ personalizedFeed: e.target.checked })}
+                    className="w-4 h-4 accent-[var(--brand-action)] shrink-0"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-[13px] cursor-pointer">
+                  <span>شماره تماس من هنگام شروع گفتگو در چت مخفی بماند</span>
+                  <input
+                    type="checkbox"
+                    checked={user.hidePhoneInChat}
+                    onChange={(e) => onUpdateProfile({ hidePhoneInChat: e.target.checked })}
+                    className="w-4 h-4 accent-[var(--brand-action)] shrink-0"
+                  />
+                </label>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <label className="text-[12px]">ساعات مجاز پاسخگویی تماس:</label>
+                  <input
+                    type="text"
+                    value={callHours}
+                    onChange={(e) => setCallHours(e.target.value)}
+                    className="kt-input !h-[34px] max-w-[200px] text-[12px]"
+                  />
+                </div>
+
+                {/* Blocked Users */}
+                <div className="pt-3 border-t border-[var(--border-neutral-weaker)]">
+                  <div className="text-[12px] font-bold mb-1.5">
+                    کاربران مسدودشده ({toPersianDigits(user.blockedUsers.length)})
+                  </div>
+                  {user.blockedUsers.length === 0 ? (
+                    <div className="text-[12px] text-[var(--content-neutral-default)]">
+                      هیچ کاربری مسدود نیست.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {user.blockedUsers.map((bu) => (
+                        <span
+                          key={bu}
+                          className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[var(--surface-neutral-weak)] text-[12px]"
+                        >
+                          <span>{bu}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onUpdateProfile({
+                                blockedUsers: user.blockedUsers.filter((x) => x !== bu),
+                              })
+                            }
+                            className="text-[var(--brand-primary)] font-bold text-[11px]"
+                          >
+                            رفع مسدودی
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-neutral-weaker)]">
+                  <button
+                    type="button"
+                    onClick={onClearRecent}
+                    className="text-[12.5px] font-bold text-[var(--semantic-negative)] hover:underline"
+                  >
+                    حذف همهٔ بازدیدهای اخیر ({toPersianDigits(recentAds.length)})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateProfile({
+                        allowCallHours: callHours,
+                      });
+                      setSettingsSavedMsg('تنظیمات با موفقیت ذخیره شد.');
+                      setTimeout(() => setSettingsSavedMsg(''), 3500);
+                    }}
+                    className="kt-button--primary !h-[36px] !px-5 text-[13px]"
+                  >
+                    ذخیره تنظیمات
+                  </button>
+                </div>
+              </div>
+
+              {/* Quiet Collapsible Staff / Role Preview Switcher (hidden from public homepage & normal profile) */}
+              <details className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA]">
+                <summary className="cursor-pointer text-[13px] font-bold text-[var(--content-neutral-stronger)] select-none">
+                  پیش‌نمایش پنل‌های همکاران و سطوح دسترسی (ویژه تست داخلی)
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <div className="text-[12px] text-[var(--content-neutral-default)]">
+                    برای بررسی پنل اختصاصی هر سطح دسترسی (کسب‌وکار، ناظر آگهی، پشتیبان یا مدیریت سامانه)، می‌توانید موقتاً نقش تست را تغییر دهید:
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {(Object.keys(ROLE_META) as UserRole[]).map((r) => (
                       <button
@@ -875,1447 +1648,24 @@ export default function UserDashboardModal({
                       </button>
                     ))}
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB: BARTER ASSETS INVENTORY & AI MATCHING */}
-            {tab === 'barterAssets' && (
-              <div className="space-y-5">
-                <div className="pb-3 border-b border-[var(--border-neutral-weaker)]">
-                  <h3 className="text-[17px] font-bold text-[var(--content-neutral-stronger)]">
-                    سبد دارایی‌های آماده تهاتر من
-                  </h3>
-                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                    دارایی‌ها و کالاهایی که قصد معاوضه آن‌ها را دارید (حتی بدون انتشار آگهی عمومی) ثبت کنید تا هوش مصنوعی بهترین تطابق‌های ۲ طرفه و ۳ ضلعی را پیشنهاد دهد.
-                  </p>
-                </div>
-
-                {/* Preferred Target Categories */}
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-2.5">
-                  <div className="text-[12px] font-bold text-[var(--content-neutral-stronger)]">
-                    دسته‌های مورد علاقه من برای دریافت در تهاتر:
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {CATEGORIES.filter((c) => c.showInSidebar).map((cat) => {
-                      const prefs = user.preferredBarterCategories || [];
-                      const active = prefs.includes(cat.name);
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => {
-                            const next = active
-                              ? prefs.filter((x) => x !== cat.name)
-                              : [...prefs, cat.name];
-                            onUpdateProfile({ preferredBarterCategories: next });
-                          }}
-                          className={`px-3 py-1 rounded-full text-[12px] border transition-colors ${
-                            active
-                              ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
-                              : 'bg-white border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
-                          }`}
-                        >
-                          {cat.emoji} {cat.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Add New Barter Asset Form */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const cleanTitle = assetTitle.trim();
-                    const val = Number(assetValue) || 0;
-                    if (!cleanTitle || val <= 0) return;
-                    onAddBarterAsset({
-                      title: cleanTitle,
-                      category: assetCategory,
-                      estimatedValue: val,
-                      condition: assetCondition,
-                      city: assetCity,
-                      swapPreference: assetPref.trim() || 'معاوضه با ملک، خودرو یا کالای هم‌ارزش',
-                    });
-                    setAssetTitle('');
-                    setAssetValue('');
-                    setAssetPref('');
-                  }}
-                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3"
-                >
-                  <div className="text-[13px] font-bold text-[var(--brand-primary)] flex items-center gap-1.5">
-                    <Plus className="w-4 h-4" />
-                    <span>افزودن دارایی جدید به سبد تهاتر</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <input
-                      type="text"
-                      value={assetTitle}
-                      onChange={(e) => setAssetTitle(e.target.value)}
-                      placeholder="عنوان کالا یا ملک (مثلاً: سکه امامی / پژو پارس)"
-                      className="kt-input !h-[36px] text-[12px] sm:col-span-2"
-                    />
-                    <input
-                      type="number"
-                      min={100000}
-                      value={assetValue}
-                      onChange={(e) => setAssetValue(e.target.value)}
-                      placeholder="ارزش تخمینی (تومان)"
-                      className="kt-input !h-[36px] text-[12px] text-left dir-ltr"
-                    />
-                    <select
-                      value={assetCategory}
-                      onChange={(e) => setAssetCategory(e.target.value)}
-                      className="kt-input !h-[36px] text-[12px] bg-white"
-                    >
-                      {CATEGORIES.filter((c) => c.showInSidebar).map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={assetCondition}
-                      onChange={(e) => setAssetCondition(e.target.value as BarterAsset['condition'])}
-                      className="kt-input !h-[36px] text-[12px] bg-white"
-                    >
-                      <option value="پلمپ / صفر">پلمپ / صفر</option>
-                      <option value="در حد نو">در حد نو</option>
-                      <option value="کارکرده سالم">کارکرده سالم</option>
-                    </select>
-                    <select
-                      value={assetCity}
-                      onChange={(e) => setAssetCity(e.target.value)}
-                      className="kt-input !h-[36px] text-[12px] bg-white"
-                    >
-                      {CITIES.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      value={assetPref}
-                      onChange={(e) => setAssetPref(e.target.value)}
-                      placeholder="ترجیح شما برای معاوضه (مثلاً: آپارتمان نقلی یا خودرو اتومات)"
-                      className="kt-input !h-[36px] text-[12px] flex-1"
-                    />
-                    <button type="submit" className="kt-button--primary !h-[36px] !px-5 text-[12px]">
-                      ثبت در سبد دارایی
-                    </button>
-                  </div>
-                </form>
-
-                {/* Registered Barter Assets List */}
-                <div className="space-y-3">
-                  {barterAssets.length === 0 ? (
-                    <p className="py-8 text-center text-[13px] text-[var(--content-neutral-default)]">
-                      هنوز دارایی‌ای در سبد تهاتر خود ثبت نکرده‌اید.
-                    </p>
-                  ) : (
-                    barterAssets.map((asset) => {
-                      const isExpanded = matchedAssetId === asset.id;
-                      const topMatches = isExpanded
-                        ? allListings
-                            .filter((l) => l.hasExchange && l.price > 0)
-                            .map((l) => {
-                              const maxP = Math.max(l.price, asset.estimatedValue);
-                              const diff = Math.abs(l.price - asset.estimatedValue);
-                              const score = Math.max(
-                                58,
-                                Math.min(98, Math.round(98 - (diff / maxP) * 45))
-                              );
-                              return { listing: l, diff, score };
-                            })
-                            .sort((a, b) => b.score - a.score)
-                            .slice(0, 3)
-                        : [];
-
-                      return (
-                        <div
-                          key={asset.id}
-                          className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="px-2 py-0.5 rounded bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
-                                  {asset.category}
-                                </span>
-                                <span className="px-2 py-0.5 rounded bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-stronger)] text-[11px]">
-                                  {asset.condition}
-                                </span>
-                                <span className="text-[11px] text-[var(--content-neutral-default)]">
-                                  {asset.city} · {asset.createdAt}
-                                </span>
-                              </div>
-                              <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)] mt-1.5">
-                                {asset.title}
-                              </div>
-                              <div className="text-[12px] text-[var(--semantic-positive)] font-extrabold mt-0.5">
-                                ارزش کارشناسی: {formatToman(asset.estimatedValue)}
-                              </div>
-                              <div className="text-[12px] text-[var(--content-neutral-default)] mt-1">
-                                ترجیح تهاتر: {asset.swapPreference}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => setMatchedAssetId(isExpanded ? null : asset.id)}
-                                className="kt-button--outlined !h-[32px] !px-3 text-[11px] text-[var(--brand-primary)]"
-                              >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                <span>{isExpanded ? 'بستن پیشنهادها' : 'تطابق هوشمند'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onDeleteBarterAsset(asset.id)}
-                                className="p-1.5 rounded border border-[var(--border-neutral-weaker)] text-[var(--semantic-negative)] hover:bg-[var(--brand-soft)]"
-                                title="حذف دارایی"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {isExpanded && (
-                            <div className="pt-3 mt-2 border-t border-[var(--border-neutral-weaker)] space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[12px] font-bold text-[var(--content-neutral-stronger)]">
-                                  بهترین گزینه‌های تهاتر در بازار تهاتر آپ برای این دارایی:
-                                </span>
-                                {onOpenAiTab && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      onClose();
-                                      onOpenAiTab('chain');
-                                    }}
-                                    className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline"
-                                  >
-                                    مشاهده زنجیره‌های ۳ ضلعی ←
-                                  </button>
-                                )}
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                {topMatches.map(({ listing, diff, score }) => (
-                                  <button
-                                    key={listing.id}
-                                    type="button"
-                                    onClick={() => {
-                                      onSelectListing(listing);
-                                      onClose();
-                                    }}
-                                    className="p-2.5 rounded-[6px] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] bg-[var(--surface-neutral-subtle)] text-right space-y-1 transition-colors"
-                                  >
-                                    <div className="flex items-center justify-between text-[10px]">
-                                      <span className="font-bold text-[var(--semantic-positive)]">
-                                        {toPersianDigits(score)}٪ تطابق
-                                      </span>
-                                      <span className="text-[var(--content-neutral-default)]">{listing.city}</span>
-                                    </div>
-                                    <div className="text-[12px] font-bold truncate">{listing.title}</div>
-                                    <div className="text-[11px] text-[var(--brand-primary)]">
-                                      مابه‌التفاوت: {diff === 0 ? 'سربه‌سر' : formatToman(diff)}
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: WALLET & PAYMENTS */}
-            {tab === 'wallet' && (
-              <div className="space-y-5">
-                <div className="p-5 rounded-[8px] bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-action)] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[12px] opacity-90">موجودی قابل استفاده در تهاتر آپ</div>
-                    <div className="text-[24px] font-extrabold mt-1">
-                      {formatToman(walletBalance)}
-                    </div>
-                    <div className="text-[11px] opacity-85 mt-1">
-                      قابل استفاده برای نردبان، برچسب فوری، تمدید و کارشناسی هوشمند
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[100_000, 250_000, 500_000].map((amt) => (
-                      <button
-                        key={amt}
-                        type="button"
-                        onClick={() => onTopUpWallet(amt)}
-                        className="px-3 py-2 rounded-[6px] bg-white/15 hover:bg-white/25 text-white text-[12px] font-bold transition-colors"
-                      >
-                        + {formatToman(amt)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <label className="text-[13px] font-medium shrink-0">
-                    شارژ مبلغ دلخواه (تومان):
-                  </label>
-                  <input
-                    type="number"
-                    min={10000}
-                    step={50000}
-                    value={customCharge}
-                    onChange={(e) => setCustomCharge(e.target.value)}
-                    className="kt-input sm:max-w-[220px] text-left dir-ltr"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const val = Number(customCharge) || 0;
-                      if (val >= 10_000) onTopUpWallet(val);
-                    }}
-                    className="kt-button--primary !px-5"
-                  >
-                    پرداخت و افزایش اعتبار
-                  </button>
-                </div>
-
-                <div>
-                  <h4 className="text-[14px] font-bold text-[var(--content-neutral-stronger)] mb-3">
-                    تاریخچه تراکنش‌ها و پرداخت‌های من
-                  </h4>
-                  <div className="border border-[var(--border-neutral-weaker)] rounded-[8px] divide-y divide-[var(--border-neutral-weaker)]">
-                    {transactions.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="p-3.5 flex items-center justify-between gap-3 text-[13px]"
-                      >
-                        <div>
-                          <div className="font-medium text-[var(--content-neutral-stronger)]">
-                            {tx.title}
-                          </div>
-                          <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
-                            {tx.date} · وضعیت: {tx.status}
-                          </div>
-                        </div>
-                        <div
-                          className={`font-bold shrink-0 ${
-                            tx.type === 'credit'
-                              ? 'text-[var(--semantic-positive)]'
-                              : 'text-[var(--brand-primary)]'
-                          }`}
-                        >
-                          {tx.type === 'credit' ? '+' : '-'} {formatToman(tx.amount)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: MY ADS WITH STATUS, ANALYTICS, EDIT, URGENT, LADDER, DELETE WITH REASON */}
-            {tab === 'myAds' && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {(
-                      [
-                        { id: 'all', label: 'همه آگهی‌ها' },
-                        { id: 'published', label: 'منتشرشده' },
-                        { id: 'pending', label: 'در انتظار تأیید' },
-                        { id: 'needs_edit', label: 'نیازمند اصلاح' },
-                      ] as const
-                    ).map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => setAdStatusFilter(st.id)}
-                        className={`px-3 py-1.5 rounded-full text-[12px] border transition-colors ${
-                          adStatusFilter === st.id
-                            ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
-                            : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
-                        }`}
-                      >
-                        {st.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenPostAd();
-                    }}
-                    className="kt-button--primary !h-[36px] !px-4 text-[12px]"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>ثبت آگهی جدید</span>
-                  </button>
-                </div>
-
-                {/* Inline Ad Editor */}
-                {editingAd && (
-                  <div className="p-4 rounded-[8px] border-2 border-[var(--brand-action)]/40 bg-[var(--surface-neutral-subtle)] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[14px] text-[var(--brand-primary)]">
-                        ویرایش آگهی: {editingAd.title}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setEditingAd(null)}
-                        className="text-[12px] text-[var(--content-neutral-default)] hover:underline"
-                      >
-                        انصراف
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[12px] font-medium mb-1">عنوان آگهی</label>
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          className="kt-input !h-[36px] text-[13px]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] font-medium mb-1">قیمت (تومان)</label>
-                        <input
-                          type="number"
-                          value={editPrice}
-                          onChange={(e) => setEditPrice(e.target.value)}
-                          className="kt-input !h-[36px] text-[13px] text-left dir-ltr"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <label className="flex items-center gap-1.5 text-[12px] cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editExchange}
-                          onChange={(e) => setEditExchange(e.target.checked)}
-                          className="accent-[var(--brand-action)]"
-                        />
-                        <span>امکان معاوضه فعال باشد</span>
-                      </label>
-                      {editExchange && (
-                        <input
-                          type="text"
-                          value={editExchangeWith}
-                          onChange={(e) => setEditExchangeWith(e.target.value)}
-                          placeholder="مورد دلخواه برای معاوضه..."
-                          className="kt-input !h-[34px] text-[12px] flex-1 min-w-[200px]"
-                        />
-                      )}
-                    </div>
-                    <textarea
-                      rows={2}
-                      value={editDesc}
-                      onChange={(e) => setEditDesc(e.target.value)}
-                      className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[13px]"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setEditingAd(null)}
-                        className="kt-button--outlined !h-[34px] text-[12px]"
-                      >
-                        انصراف
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onEditAd(editingAd.id, {
-                            title: editTitle.trim() || editingAd.title,
-                            price: Number(editPrice) || 0,
-                            hasExchange: editExchange,
-                            exchangeWith: editExchangeWith.trim(),
-                            description: editDesc.trim() || editingAd.description,
-                          });
-                          setEditingAd(null);
-                        }}
-                        className="kt-button--primary !h-[34px] !px-5 text-[12px]"
-                      >
-                        ثبت تغییرات
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Delete with Reason Prompt */}
-                {deletingAdId && (
-                  <div className="p-4 rounded-[8px] border border-[var(--semantic-negative)] bg-[var(--brand-soft)] space-y-2.5">
-                    <div className="text-[13px] font-bold text-[var(--semantic-negative)]">
-                      لطفاً علت حذف آگهی را انتخاب کنید (مشابه فرآیند استاندارد حذف آگهی):
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        'در تهاتر آپ معامله/معاوضه شد',
-                        'از فروش/معاوضه منصرف شدم',
-                        'اطلاعات آگهی نیاز به تغییر اساسی دارد',
-                      ].map((reason) => (
-                        <button
-                          key={reason}
-                          type="button"
-                          onClick={() => setDeleteReason(reason)}
-                          className={`px-3 py-1 rounded-[4px] text-[12px] border ${
-                            deleteReason === reason
-                              ? 'bg-[var(--brand-action)] text-white border-[var(--brand-action)]'
-                              : 'bg-white border-[var(--border-neutral-weaker)]'
-                          }`}
-                        >
-                          {reason}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDeletingAdId(null)}
-                        className="kt-button--outlined !h-[32px] text-[12px]"
-                      >
-                        انصراف
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onDeleteAd(deletingAdId, deleteReason);
-                          setDeletingAdId(null);
-                        }}
-                        className="kt-button--primary !h-[32px] !px-4 text-[12px]"
-                      >
-                        تأیید حذف آگهی
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {filteredMyAds.length === 0 ? (
-                  <div className="py-12 text-center border border-dashed border-[var(--border-neutral-weaker)] rounded-[8px] space-y-3">
-                    <p className="text-[14px] text-[var(--content-neutral-default)]">
-                      آگهی‌ای در این وضعیت یافت نشد.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredMyAds.map((ad) => {
-                      const meta = listingMeta[ad.id] || {
-                        moderationStatus: 'published' as AdModerationStatus,
-                        views: 342,
-                        contactClicks: 19,
-                        chatClicks: 11,
-                        expiryDays: 28,
-                      };
-                      const stBadge = STATUS_LABELS[meta.moderationStatus];
-
-                      return (
-                        <div
-                          key={ad.id}
-                          className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3"
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div
-                              onClick={() => {
-                                onSelectListing(ad);
-                                onClose();
-                              }}
-                              className="flex items-center gap-3 min-w-0 cursor-pointer"
-                            >
-                              <img
-                                src={ad.images[0] || '/ads/fake-1.svg'}
-                                alt={ad.title}
-                                className="w-16 h-16 rounded-[6px] object-cover shrink-0 border border-[var(--border-neutral-weaker)]"
-                              />
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className={`px-2 py-0.5 rounded-[4px] text-[11px] font-bold ${stBadge.cls}`}>
-                                    {stBadge.text}
-                                  </span>
-                                  {(ad.isUrgent || meta.isUrgent) && (
-                                    <span className="px-2 py-0.5 rounded-[4px] bg-[var(--brand-action)] text-white text-[10px] font-bold">
-                                      فوری
-                                    </span>
-                                  )}
-                                  {ad.badge === 'نردبان شده' && (
-                                    <span className="px-2 py-0.5 rounded-[4px] bg-[var(--semantic-info)]/10 text-[var(--semantic-info)] text-[10px] font-bold">
-                                      نردبان شده
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)] truncate mt-1">
-                                  {ad.title}
-                                </div>
-                                <div className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                                  {ad.price > 0 ? formatToman(ad.price) : 'توافقی'} · {ad.city} ({ad.neighborhood})
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Ad Action Buttons */}
-                            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => onLadderAd(ad.id)}
-                                className="kt-button--outlined !h-[32px] !px-2.5 text-[11px]"
-                                title="ارتقا به صدر آگهی‌ها"
-                              >
-                                <TrendingUp className="w-3.5 h-3.5 text-[var(--brand-action)]" />
-                                <span>نردبان</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onUrgentAd(ad.id)}
-                                className="kt-button--outlined !h-[32px] !px-2.5 text-[11px]"
-                              >
-                                <Zap className="w-3.5 h-3.5 text-[var(--semantic-warning)]" />
-                                <span>فوری</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onRenewAd(ad.id)}
-                                className="kt-button--outlined !h-[32px] !px-2.5 text-[11px]"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5 text-[var(--semantic-positive)]" />
-                                <span>تمدید</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openEditorForAd(ad)}
-                                className="kt-button--outlined !h-[32px] !px-2.5 text-[11px]"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                                <span>ویرایش</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeletingAdId(ad.id)}
-                                className="p-1.5 rounded border border-[var(--border-neutral-weaker)] hover:bg-[var(--brand-soft)] text-[var(--semantic-negative)]"
-                                title="حذف آگهی"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Ad 7-day Analytics Strip */}
-                          <div className="pt-2.5 border-t border-[var(--border-neutral-weaker)] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--content-neutral-default)]">
-                            <div className="flex flex-wrap items-center gap-4">
-                              <span className="flex items-center gap-1">
-                                <Eye className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
-                                <span>بازدید ۷ روز: </span>
-                                <strong className="text-[var(--content-neutral-stronger)]">
-                                  {toPersianDigits(meta.views)}
-                                </strong>
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <PhoneCall className="w-3.5 h-3.5 text-[var(--semantic-positive)]" />
-                                <span>مشاهده شماره: </span>
-                                <strong className="text-[var(--content-neutral-stronger)]">
-                                  {toPersianDigits(meta.contactClicks)}
-                                </strong>
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <MessageSquare className="w-3.5 h-3.5 text-[var(--semantic-info)]" />
-                                <span>شروع چت: </span>
-                                <strong className="text-[var(--content-neutral-stronger)]">
-                                  {toPersianDigits(meta.chatClicks)}
-                                </strong>
-                              </span>
-                            </div>
-                            <span>اعتبار باقی‌مانده: {toPersianDigits(meta.expiryDays)} روز</span>
-                          </div>
-
-                          {meta.moderationNote && (
-                            <div className="p-2 rounded bg-[var(--brand-soft)] text-[11px] text-[var(--brand-primary)] flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                              <span>یادداشت ناظر: {meta.moderationNote}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 4: BARTER OFFERS */}
-            {tab === 'barterOffers' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-[var(--border-neutral-weaker)] pb-3">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setOfferDir('received')}
-                      className={`px-3.5 py-1.5 rounded-[6px] text-[13px] font-bold ${
-                        offerDir === 'received'
-                          ? 'bg-[var(--brand-action)] text-white'
-                          : 'bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-stronger)]'
-                      }`}
-                    >
-                      پیشنهادهای دریافتی ({toPersianDigits(barterOffers.filter((o) => o.direction === 'received').length)})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOfferDir('sent')}
-                      className={`px-3.5 py-1.5 rounded-[6px] text-[13px] font-bold ${
-                        offerDir === 'sent'
-                          ? 'bg-[var(--brand-action)] text-white'
-                          : 'bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-stronger)]'
-                      }`}
-                    >
-                      پیشنهادهای ارسالی ({toPersianDigits(barterOffers.filter((o) => o.direction === 'sent').length)})
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {barterOffers
-                    .filter((o) => o.direction === offerDir)
-                    .map((offer) => (
-                      <div
-                        key={offer.id}
-                        className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold flex items-center gap-1">
-                              <Sparkles className="w-3 h-3" />
-                              <span>تطابق هوش مصنوعی: {toPersianDigits(offer.aiMatchPercent)}٪</span>
-                            </span>
-                            {offer.installmentRequested && (
-                              <span className="px-2 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[11px] font-bold">
-                                همراه با اقساط ۵۰/۵۰
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[11px] text-[var(--content-neutral-default)]">
-                            {offer.createdAt}
-                          </span>
-                        </div>
-
-                        <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)]">
-                          پیشنهاد: {offer.offeredItemTitle}
-                        </div>
-                        <div className="text-[12px] text-[var(--content-neutral-default)]">
-                          برای آگهی: <strong className="text-[var(--content-neutral-stronger)]">{offer.listingTitle}</strong> ·{' '}
-                          مابه‌التفاوت: <strong className="text-[var(--brand-primary)]">{formatToman(offer.cashDifference)}</strong>
-                        </div>
-                        <p className="text-[12px] bg-[var(--surface-neutral-subtle)] p-2.5 rounded text-[var(--content-neutral-stronger)]">
-                          {offer.note}
-                        </p>
-
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                          <span className="text-[12px]">
-                            وضعیت:{' '}
-                            <strong
-                              className={
-                                offer.status === 'accepted'
-                                  ? 'text-[var(--semantic-positive)]'
-                                  : offer.status === 'rejected'
-                                  ? 'text-[var(--semantic-negative)]'
-                                  : 'text-[var(--semantic-warning)]'
-                              }
-                            >
-                              {offer.status === 'accepted'
-                                ? 'تایید شده'
-                                : offer.status === 'rejected'
-                                ? 'رد شده'
-                                : 'در انتظار بررسی'}
-                            </strong>
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {offer.direction === 'received' && offer.status === 'pending' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => onRespondBarterOffer(offer.id, 'accepted')}
-                                  className="kt-button--primary !h-[32px] !px-3.5 text-[12px]"
-                                >
-                                  پذیرش و هماهنگی
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => onRespondBarterOffer(offer.id, 'rejected')}
-                                  className="kt-button--outlined !h-[32px] !px-3 text-[12px] text-[var(--semantic-negative)]"
-                                >
-                                  رد پیشنهاد
-                                </button>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAgreementCopied(false);
-                                setPreviewOfferAgreement(offer);
-                              }}
-                              className="kt-button--outlined !h-[32px] !px-3 text-[11px]"
-                            >
-                              <FileText className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
-                              <span>تفاهم‌نامه امن</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onClose();
-                                onOpenChatFromOffer(offer);
-                              }}
-                              className="kt-button--outlined !h-[32px] !px-3 text-[12px]"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                              <span>گفتگو</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {offer.status === 'accepted' && (
-                          <div className="pt-2.5 mt-1 border-t border-[var(--border-neutral-weaker)] grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
-                            {[
-                              { step: '۱. توافق اولیه', done: true },
-                              { step: '۲. رویت و کارشناسی', done: true },
-                              { step: '۳. استعلام سند / ۵۰/۵۰', done: false },
-                              { step: '۴. تحویل نهایی', done: false },
-                            ].map((st) => (
-                              <div
-                                key={st.step}
-                                className={`px-2 py-1.5 rounded text-center font-medium ${
-                                  st.done
-                                    ? 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
-                                    : 'bg-[var(--surface-neutral-subtle)] text-[var(--content-neutral-default)]'
-                                }`}
-                              >
-                                {st.step} {st.done ? '✓' : '⏳'}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-
-                {previewOfferAgreement && (() => {
-                  const targetAd = allListings.find((l) => l.id === previewOfferAgreement.listingId);
-                  const agreementText = generateBarterAgreementDraft({
-                    listingTitle: targetAd?.title || previewOfferAgreement.listingTitle,
-                    listingCode: targetAd?.id || previewOfferAgreement.listingId,
-                    listingPrice: targetAd?.price || previewOfferAgreement.listingPrice,
-                    offeredTitle: previewOfferAgreement.offeredItemTitle,
-                    offeredPrice: previewOfferAgreement.offeredEstimatedPrice,
-                    sellerName: targetAd?.sellerName || previewOfferAgreement.proposerName,
-                    useInstallment: previewOfferAgreement.installmentRequested,
-                  });
-                  return (
-                    <div className="p-4 rounded-[8px] border-2 border-[var(--brand-action)]/40 bg-[var(--surface-neutral-subtle)] space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[13px] font-bold text-[var(--brand-primary)]">
-                          پیش‌نویس تفاهم‌نامه اولیه تهاتر امن
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard?.writeText(agreementText).catch(() => undefined);
-                              setAgreementCopied(true);
-                            }}
-                            className="kt-button--primary !h-[30px] !px-3 text-[11px]"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>{agreementCopied ? 'کپی شد ✓' : 'کپی متن قرارداد'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewOfferAgreement(null)}
-                            className="text-[12px] text-[var(--content-neutral-default)] hover:underline"
-                          >
-                            بستن
-                          </button>
-                        </div>
-                      </div>
-                      <pre className="p-3 rounded bg-white border border-[var(--border-neutral-weaker)] text-[11px] leading-6 whitespace-pre-wrap font-sans text-[var(--content-neutral-stronger)]">
-                        {agreementText}
-                      </pre>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* TAB 5: INSTALLMENTS */}
-            {tab === 'installments' && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-[16px] font-bold">پرونده‌های اقساط ۵۰/۵۰ و تسهیلات تهاتر</h3>
-                    <p className="text-[12px] text-[var(--content-neutral-default)]">
-                      وضعیت درخواست‌های تقسیط مابه‌التفاوت معاملات معاوضه شما
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenFacilities();
-                    }}
-                    className="kt-button--outlined !h-[34px] text-[12px]"
-                  >
-                    محاسبه آنلاین سود و قسط
-                  </button>
-                </div>
-
-                {installmentRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-bold text-[14px]">{req.listingTitle}</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[11px] font-bold">
-                        {req.status}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px] pt-1">
-                      <div className="p-2 rounded bg-[var(--surface-neutral-subtle)]">
-                        <div className="text-[var(--content-neutral-default)]">ارزش کل</div>
-                        <div className="font-bold mt-0.5">{formatToman(req.totalAmount)}</div>
-                      </div>
-                      <div className="p-2 rounded bg-[var(--surface-neutral-subtle)]">
-                        <div className="text-[var(--content-neutral-default)]">سهم تهاتر</div>
-                        <div className="font-bold mt-0.5">{formatToman(req.barterCoveredAmount)}</div>
-                      </div>
-                      <div className="p-2 rounded bg-[var(--surface-neutral-subtle)]">
-                        <div className="text-[var(--content-neutral-default)]">مبلغ تسهیلات</div>
-                        <div className="font-bold mt-0.5">{formatToman(req.loanAmount)}</div>
-                      </div>
-                      <div className="p-2 rounded bg-[var(--brand-soft)] text-[var(--brand-primary)]">
-                        <div>قسط ماهیانه ({toPersianDigits(req.months)} ماه)</div>
-                        <div className="font-extrabold mt-0.5">{formatToman(req.monthlyInstallment)}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* TAB 6: BOOKMARKS */}
-            {tab === 'bookmarks' && (
-              <div className="space-y-3">
-                <h3 className="text-[16px] font-bold">آگهی‌های نشان‌شده ({toPersianDigits(bookmarkedAds.length)})</h3>
-                {bookmarkedAds.length === 0 ? (
-                  <p className="py-10 text-center text-[13px] text-[var(--content-neutral-default)]">
-                    هنوز آگهی‌ای را نشان نکرده‌اید.
-                  </p>
-                ) : (
-                  bookmarkedAds.map((ad) => (
-                    <div
-                      key={ad.id}
-                      className="p-3 rounded-[8px] border border-[var(--border-neutral-weaker)] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                    >
-                      <div
-                        onClick={() => {
-                          onSelectListing(ad);
-                          onClose();
-                        }}
-                        className="flex items-center gap-3 min-w-0 cursor-pointer"
-                      >
-                        <img
-                          src={ad.images[0] || '/ads/fake-1.svg'}
-                          alt={ad.title}
-                          className="w-14 h-14 rounded-[4px] object-cover shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-[14px] font-bold truncate">{ad.title}</div>
-                          <div className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                            {ad.city} · {ad.price > 0 ? formatToman(ad.price) : 'توافقی'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onOpenCompareWith(ad);
-                          }}
-                          className="kt-button--outlined !h-[32px] !px-3 text-[11px]"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-[var(--brand-action)]" />
-                          <span>مقایسه هوش مصنوعی</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onToggleBookmark(ad.id)}
-                          className="kt-button--ghost !h-[32px] text-[12px] text-[var(--semantic-negative)]"
-                        >
-                          حذف نشان
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* TAB 7: NOTES */}
-            {tab === 'notes' && (
-              <div className="space-y-3">
-                <h3 className="text-[16px] font-bold">یادداشت‌های شخصی من ({toPersianDigits(noteEntries.length)})</h3>
-                {noteEntries.length === 0 ? (
-                  <p className="py-10 text-center text-[13px] text-[var(--content-neutral-default)]">
-                    یادداشتی روی آگهی‌ها ثبت نشده است. در صفحه جزئیات هر آگهی می‌توانید یادداشت خصوصی بنویسید.
-                  </p>
-                ) : (
-                  noteEntries.map(([adId, text]) => {
-                    const targetAd = allListings.find((l) => l.id === adId);
-                    const isEditing = editingNoteId === adId;
-                    return (
-                      <div
-                        key={adId}
-                        className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] space-y-2"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (targetAd) {
-                                onSelectListing(targetAd);
-                                onClose();
-                              }
-                            }}
-                            className="text-[13px] font-bold text-[var(--brand-primary)] hover:underline text-right"
-                          >
-                            {targetAd ? targetAd.title : `آگهی ${adId}`}
-                          </button>
-                          <div className="flex items-center gap-2 text-[11px]">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingNoteId(adId);
-                                setEditingNoteText(text);
-                              }}
-                              className="text-[var(--content-neutral-default)] hover:text-[var(--content-neutral-stronger)]"
-                            >
-                              ویرایش
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onSaveNote(adId, '')}
-                              className="text-[var(--semantic-negative)]"
-                            >
-                              حذف
-                            </button>
-                          </div>
-                        </div>
-                        {isEditing ? (
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={editingNoteText}
-                              onChange={(e) => setEditingNoteText(e.target.value)}
-                              className="kt-input !h-[34px] text-[12px] flex-1"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSaveNote(adId, editingNoteText);
-                                setEditingNoteId(null);
-                              }}
-                              className="kt-button--primary !h-[34px] !px-4 text-[12px]"
-                            >
-                              ذخیره
-                            </button>
-                          </div>
-                        ) : (
-                          <p className="text-[13px] text-[var(--content-neutral-stronger)]">{text}</p>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* TAB 8: RECENT VIEWS */}
-            {tab === 'recent' && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[16px] font-bold">بازدیدهای اخیر ({toPersianDigits(recentAds.length)})</h3>
-                  {recentAds.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={onClearRecent}
-                      className="kt-button--outlined !h-[32px] !px-3 text-[12px] text-[var(--semantic-negative)]"
-                    >
-                      پاک کردن تاریخچه
-                    </button>
-                  )}
-                </div>
-                {recentAds.length === 0 ? (
-                  <p className="py-10 text-center text-[13px] text-[var(--content-neutral-default)]">
-                    هنوز آگهی‌ای را مشاهده نکرده‌اید.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {recentAds.map((ad) => (
-                      <div
-                        key={ad.id}
-                        onClick={() => {
-                          onSelectListing(ad);
-                          onClose();
-                        }}
-                        className="p-3 rounded-[8px] border border-[var(--border-neutral-weaker)] flex items-center gap-3 cursor-pointer hover:bg-[var(--surface-neutral-weak)]"
-                      >
-                        <img
-                          src={ad.images[0] || '/ads/fake-1.svg'}
-                          alt={ad.title}
-                          className="w-12 h-12 rounded-[4px] object-cover shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-[13px] font-bold truncate">{ad.title}</div>
-                          <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
-                            {ad.city} · {ad.neighborhood}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 9: SAVED SEARCHES */}
-            {tab === 'savedSearches' && (
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-[16px] font-bold">جستجوهای ذخیره‌شده و خبرنامه آگهی</h3>
-                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                    در صفحه اصلی با دکمه «ذخیره جستجو» فیلتر دلخواه خود را به این فهرست اضافه کنید.
-                  </p>
-                </div>
-                {savedSearches.length === 0 ? (
-                  <p className="py-10 text-center text-[13px] text-[var(--content-neutral-default)]">
-                    جستجویی ذخیره نشده است.
-                  </p>
-                ) : (
-                  savedSearches.map((s) => (
-                    <div
-                      key={s.id}
-                      className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                    >
-                      <div>
-                        <div className="text-[14px] font-bold">{s.title}</div>
-                        <div className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                          شهر: {s.cityLabel} · دسته: {s.category || 'همه دسته‌ها'}{' '}
-                          {s.onlyExchange ? '· فقط معاوضه' : ''} · {s.createdAt}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => onToggleSavedSearchNotify(s.id)}
-                          className={`px-2.5 py-1 rounded-[4px] text-[11px] font-medium border ${
-                            s.notifyEnabled
-                              ? 'bg-[var(--semantic-positive-soft)] border-[var(--semantic-positive)] text-[var(--semantic-positive)]'
-                              : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
-                          }`}
-                        >
-                          {s.notifyEnabled ? 'اعلان فعال ✓' : 'اعلان خاموش'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onApplySavedSearch(s);
-                            onClose();
-                          }}
-                          className="kt-button--outlined !h-[30px] !px-3 text-[11px]"
-                        >
-                          <Search className="w-3 h-3" />
-                          <span>اجرا</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteSavedSearch(s.id)}
-                          className="p-1.5 rounded text-[var(--semantic-negative)] hover:bg-[var(--brand-soft)]"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* TAB 12: SAFETY, ANTI-FRAUD & SESSION SECURITY */}
-            {tab === 'safety' && (
-              <div className="space-y-5">
-                <div className="pb-3 border-b border-[var(--border-neutral-weaker)]">
-                  <h3 className="text-[17px] font-bold text-[var(--content-neutral-stronger)]">
-                    مقابله با مزاحمت، پیشگیری از کلاهبرداری و امنیت نشست‌ها
-                  </h3>
-                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
-                    راهنمای معامله امن تهاتر، ثبت فوری گزارش رفتار مشکوک و کنترل دستگاه‌های متصل به حساب موبایل شما.
-                  </p>
-                </div>
-
-                {/* Anti-Fraud Golden Checklist */}
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--semantic-warning-soft)]/40 space-y-2">
-                  <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)] flex items-center gap-1.5">
-                    <ShieldAlert className="w-4 h-4 text-[var(--brand-primary)]" />
-                    <span>سپر امنیت معامله بدون کلاهبرداری در تهاتر آپ:</span>
-                  </div>
-                  <ul className="space-y-1.5 text-[12px] text-[var(--content-neutral-stronger)] leading-6">
-                    <li>• پیش از رویت حضوری کالا/ملک و تطبیق مدارک، هیچ مبلغی به‌عنوان بیعانه واریز نکنید.</li>
-                    <li>• برای معاملات ملک و خودرو از سامانه ثبت اسناد (`my.ssaa.ir`) استعلام اصالت سند و کد رهگیری بگیرید.</li>
-                    <li>• از کلیک روی لینک‌های درگاه پرداخت ناشناس در پیامک یا شبکه‌های اجتماعی خارجی خودداری کنید.</li>
-                  </ul>
-                </div>
-
-                {/* Report Fraud / Harassment Form */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!safetyDetails.trim()) return;
-                    onSubmitSafetyReport(safetySubject, safetyDetails.trim());
-                    setSafetyDetails('');
-                    setSafetySubmittedMsg('گزارش امنیتی شما ثبت شد و همکاران پشتیبانی/نظارت به‌سرعت رسیدگی می‌کنند.');
-                    setTimeout(() => setSafetySubmittedMsg(''), 4000);
-                  }}
-                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3"
-                >
-                  <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
-                    ثبت گزارش مزاحمت یا رفتار مشکوک
-                  </div>
-                  {safetySubmittedMsg && (
-                    <div className="p-2.5 rounded bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-medium">
-                      {safetySubmittedMsg}
-                    </div>
-                  )}
-                  <select
-                    value={safetySubject}
-                    onChange={(e) => setSafetySubject(e.target.value)}
-                    className="kt-input !h-[38px] text-[12px] bg-white"
-                  >
-                    <option value="درخواست بیعانه پیش از رویت حضوری">درخواست بیعانه پیش از رویت حضوری</option>
-                    <option value="ارسال لینک جعلی یا فیشینگ در چت">ارسال لینک جعلی یا فیشینگ در چت</option>
-                    <option value="مزاحمت تلفنی یا پیام نامتعارف">مزاحمت تلفنی یا پیام نامتعارف</option>
-                    <option value="عدم تطابق کالا یا سند جعلی">عدم تطابق کالا یا سند جعلی</option>
-                  </select>
-                  <textarea
-                    rows={2}
-                    value={safetyDetails}
-                    onChange={(e) => setSafetyDetails(e.target.value)}
-                    placeholder="شماره تماس متخلف، عنوان آگهی یا شرح دقیق ماجرا را بنویسید..."
-                    className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[12px]"
-                  />
                   <div className="flex justify-end">
-                    <button type="submit" className="kt-button--primary !h-[36px] !px-4 text-[12px]">
-                      ارسال به تیم امنیت و نظارت
-                    </button>
-                  </div>
-                </form>
-
-                {/* Active Mobile Sessions & Devices */}
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
-                      نشست‌های فعال و دستگاه‌های متصل با شماره موبایل ({toPersianDigits(sessions.length)})
-                    </div>
-                    {sessions.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={onRevokeOtherSessions}
-                        className="text-[11px] font-bold text-[var(--semantic-negative)] hover:underline"
-                      >
-                        خروج از سایر دستگاه‌ها
-                      </button>
-                    )}
-                  </div>
-                  <div className="divide-y divide-[var(--border-neutral-weaker)] border border-[var(--border-neutral-weaker)] rounded-[6px]">
-                    {sessions.map((s) => (
-                      <div key={s.id} className="p-3 flex items-center justify-between gap-2 text-[12px]">
-                        <div>
-                          <div className="font-bold text-[var(--content-neutral-stronger)]">
-                            {s.deviceLabel}
-                          </div>
-                          <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
-                            {s.loginMethod} · شماره: <span className="dir-ltr">{s.phoneMasked}</span>
-                          </div>
-                        </div>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            s.isCurrent
-                              ? 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
-                              : 'bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-default)]'
-                          }`}
-                        >
-                          {s.time}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {isLoggedIn && (
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        onClick={onLogout}
-                        className="kt-button--outlined !h-[34px] text-[12px] text-[var(--semantic-negative)]"
-                      >
-                        <LogOut className="w-3.5 h-3.5" />
-                        <span>خروج کامل از حساب کاربری فعلی</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 10: BUSINESS STORE & PRIVACY/SECURITY SETTINGS */}
-            {tab === 'settings' && (
-              <div className="space-y-5">
-                {settingsSavedMsg && (
-                  <div className="p-3 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[13px] flex items-center gap-2">
-                    <Check className="w-4 h-4" />
-                    <span>{settingsSavedMsg}</span>
-                  </div>
-                )}
-
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] space-y-3">
-                  <div className="flex items-center gap-2 text-[14px] font-bold">
-                    <Store className="w-4 h-4 text-[var(--brand-primary)]" />
-                    <span>اطلاعات فروشگاه، آژانس املاک یا نمایشگاه من</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[12px] mb-1">نام فروشگاه / برند</label>
-                      <input
-                        type="text"
-                        value={storeName}
-                        onChange={(e) => setStoreName(e.target.value)}
-                        className="kt-input !h-[36px] text-[13px]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[12px] mb-1">شهر فعالیت</label>
-                      <input
-                        type="text"
-                        value={storeCity}
-                        onChange={(e) => setStoreCity(e.target.value)}
-                        className="kt-input !h-[36px] text-[13px]"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[12px] mb-1">توضیحات رزومه و زمینه فعالیت</label>
-                    <textarea
-                      rows={2}
-                      value={storeBio}
-                      onChange={(e) => setStoreBio(e.target.value)}
-                      className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[13px]"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] space-y-3">
-                  <div className="flex items-center gap-2 text-[14px] font-bold">
-                    <Lock className="w-4 h-4 text-[var(--brand-primary)]" />
-                    <span>تنظیمات حریم خصوصی، تماس و امنیت</span>
-                  </div>
-                  <label className="flex items-center gap-2 text-[13px] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={user.hidePhoneInChat}
-                      onChange={(e) => onUpdateProfile({ hidePhoneInChat: e.target.checked })}
-                      className="accent-[var(--brand-action)]"
-                    />
-                    <span>شماره تماس من هنگام شروع گفتگو در چت مخفی بماند</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-[13px] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={user.personalizedFeed !== false}
-                      onChange={(e) => onUpdateProfile({ personalizedFeed: e.target.checked })}
-                      className="accent-[var(--brand-action)]"
-                    />
-                    <span>پیشنهاد آگهی‌ها و تهاترهای هوشمند بر اساس بازدیدها و سبد دارایی من</span>
-                  </label>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="text-[12px]">ساعات مجاز پاسخگویی تماس:</label>
-                    <input
-                      type="text"
-                      value={callHours}
-                      onChange={(e) => setCallHours(e.target.value)}
-                      className="kt-input !h-[34px] max-w-[200px] text-[12px]"
-                    />
-                  </div>
-
-                  {/* Blocked Users */}
-                  <div className="pt-2 border-t border-[var(--border-neutral-weaker)]">
-                    <div className="text-[12px] font-bold mb-1.5">
-                      کاربران مسدودشده ({toPersianDigits(user.blockedUsers.length)})
-                    </div>
-                    {user.blockedUsers.length === 0 ? (
-                      <div className="text-[12px] text-[var(--content-neutral-default)]">
-                        هیچ کاربری مسدود نیست.
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {user.blockedUsers.map((bu) => (
-                          <span
-                            key={bu}
-                            className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[var(--surface-neutral-weak)] text-[12px]"
-                          >
-                            <span>{bu}</span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onUpdateProfile({
-                                  blockedUsers: user.blockedUsers.filter((x) => x !== bu),
-                                })
-                              }
-                              className="text-[var(--brand-primary)] font-bold text-[11px]"
-                            >
-                              رفع مسدودی
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
                     <button
                       type="button"
                       onClick={() => {
-                        onUpdateProfile({
-                          storeName,
-                          storeCity,
-                          storeBio,
-                          allowCallHours: callHours,
-                        });
-                        setSettingsSavedMsg('تنظیمات فروشگاه و حریم خصوصی با موفقیت ذخیره شد.');
-                        setTimeout(() => setSettingsSavedMsg(''), 3500);
+                        onClose();
+                        onOpenRolePanel();
                       }}
-                      className="kt-button--primary !h-[36px] !px-5 text-[13px]"
+                      className="kt-button--outlined !h-[34px] !px-4 text-[12px]"
                     >
-                      ذخیره تنظیمات
+                      باز کردن پنل {getRoleMeta(userRole).shortTitle}
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              </details>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
