@@ -27,6 +27,7 @@ import {
   ListingAnalyticsMeta,
   PlatformUserAccount,
   ROLE_META,
+  getRoleMeta,
   SupportTicket,
   TariffConfig,
   UserRole,
@@ -121,7 +122,7 @@ export default function RolePanelModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[1080px] h-full sm:h-[90vh] bg-[var(--surface-neutral-weaker)] sm:rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-[1080px] h-[100dvh] sm:h-[90vh] bg-[var(--surface-neutral-weaker)] sm:rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -132,10 +133,10 @@ export default function RolePanelModal({
             </div>
             <div className="min-w-0">
               <h2 className="text-[16px] sm:text-[18px] font-bold text-[var(--content-neutral-stronger)] truncate">
-                مرکز مدیریت نقش‌ها — {ROLE_META[activeRole].title}
+                مرکز مدیریت نقش‌ها — {getRoleMeta(activeRole).title}
               </h2>
               <p className="text-[11px] sm:text-[12px] text-[var(--content-neutral-default)] truncate">
-                {ROLE_META[activeRole].description}
+                {getRoleMeta(activeRole).description}
               </p>
             </div>
           </div>

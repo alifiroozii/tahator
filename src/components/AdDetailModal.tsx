@@ -26,13 +26,17 @@ import {
   Sparkles,
   ShieldCheck,
   Scale,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
 import { Listing, formatToman, toPersianDigits } from '@/data/mockData';
 import {
   AiConfig,
   DEFAULT_AI_CONFIG,
   evaluateListingPrice,
+  generateBarterAgreementDraft,
   generateSmartListingSummary,
+  getRelatedListings,
   matchBarterListings,
   normalizeDigits,
 } from '@/lib/offlineAi';
@@ -45,10 +49,11 @@ interface AdDetailModalProps {
   note: string;
   onSaveNote: (id: string, note: string) => void;
   onClose: () => void;
-  onOpenChatWith: (listing: Listing, isAdmin?: boolean) => void;
+  onOpenChatWith: (listing: Listing, isAdmin?: boolean, prefillMessage?: string) => void;
   onSelectListing: (listing: Listing) => void;
   onOpenInstallmentPlan: () => void;
   onOpenAiCompare?: (listing: Listing) => void;
+  onOpenAiChain?: (listing: Listing) => void;
   onSubmitBarterOffer?: (payload: {
     listing: Listing;
     offeredItemTitle: string;
@@ -73,6 +78,7 @@ export default function AdDetailModal({
   onSelectListing,
   onOpenInstallmentPlan,
   onOpenAiCompare,
+  onOpenAiChain,
   onSubmitBarterOffer,
   onReportListing,
   onTrackPhoneClick,
@@ -81,6 +87,11 @@ export default function AdDetailModal({
   const [activeImgIdx, setActiveImgIdx] = useState(0);
   const [fullscreenImg, setFullscreenImg] = useState(false);
   const [showSafetyTips, setShowSafetyTips] = useState(false);
+  const [showAgreementModal, setShowAgreementModal] = useState(false);
+  const [copiedAgreement, setCopiedAgreement] = useState(false);
+  const [dealMyAssetPrice, setDealMyAssetPrice] = useState(() =>
+    listing.price > 0 ? String(Math.round(listing.price * 0.65)) : '1500000000'
+  );
   const [showPhone, setShowPhone] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -126,6 +137,35 @@ export default function AdDetailModal({
   const barterMatches = useMemo(
     () => matchBarterListings(listing, allListings),
     [allListings, listing]
+  );
+
+  const relatedListings = useMemo(
+    () => getRelatedListings(listing, allListings),
+    [listing, allListings]
+  );
+
+  const dealCalc = useMemo(() => {
+    const target = listing.price || 0;
+    const myAsset = Number(normalizeDigits(dealMyAssetPrice).replace(/[^\d]/g, '')) || 0;
+    const diff = target - myAsset;
+    const absDiff = Math.abs(diff);
+    const halfCash = Math.round(absDiff * 0.5);
+    const monthly12 = Math.round((halfCash * 1.12) / 12);
+    return { target, myAsset, diff, absDiff, halfCash, monthly12 };
+  }, [listing.price, dealMyAssetPrice]);
+
+  const agreementDraftText = useMemo(
+    () =>
+      generateBarterAgreementDraft({
+        listingTitle: listing.title,
+        listingCode: listing.code,
+        listingPrice: listing.price,
+        offeredTitle: offerItemTitle || listing.exchangeWith || 'دارایی پیشنهادی خریدار',
+        offeredPrice: dealCalc.myAsset,
+        sellerName: listing.sellerName,
+        useInstallment: listing.hasInstallmentPlan,
+      }),
+    [dealCalc.myAsset, listing, offerItemTitle]
   );
 
   const getAmenityIcon = (type: string, available: boolean) => {
@@ -241,10 +281,29 @@ export default function AdDetailModal({
                 />
               </button>
               {showSafetyTips && (
-                <div className="pb-4 pr-7 text-[13px] leading-[24px] text-[var(--content-neutral-default)] space-y-1">
+                <div className="pb-4 pr-7 text-[13px] leading-[24px] text-[var(--content-neutral-default)] space-y-2">
                   <p>• پیش از رویت حضوری کالا، ملک یا مدارک مالکیت، هیچ مبلغی به عنوان بیعانه پرداخت نکنید.</p>
                   <p>• در معاملات تهاتر، اصالت سند و قیمت کارشناسی دو طرف را با حضور کارشناس تایید کنید.</p>
                   <p>• از پرداخت وجه از طریق لینک‌های ناشناس خودداری کرده و تنها در چت امن تهاتر آپ گفتگو کنید.</p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <a
+                      href="https://my.ssaa.ir"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] bg-[var(--semantic-info-soft)] text-[var(--semantic-info)] text-[11px] font-bold"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>سامانه تصدیق اصالت اسناد (ثبت احوال/اسناد)</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setShowAgreementModal(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>مشاهده پیش‌نویس تفاهم‌نامه امن تهاتر</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -529,6 +588,126 @@ export default function AdDetailModal({
               </div>
             )}
 
+            {/* Seller Self-Assessment & Authenticity Checklist */}
+            <div className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2">
+              <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                ارزیابی و وضعیت اعلامی فروشنده
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px]">
+                <div className="flex items-center gap-2 text-[var(--semantic-positive)]">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>مدارک مالکیت و سند آماده انتقال قطعی</span>
+                </div>
+                <div className="flex items-center gap-2 text-[var(--semantic-positive)]">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>امکان کارشناسی حضوری و مابه‌التفاوت تهاتر</span>
+                </div>
+                <div className="flex items-center gap-2 text-[var(--semantic-positive)]">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>
+                    {listing.isVerifiedPhotos
+                      ? 'تصاویر واقعی توسط فروشنده تایید شده'
+                      : 'امکان دریافت تصویر جدید پیش از مراجعه'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[var(--semantic-positive)]">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>پاسخگویی سریع در چت امن و تماس</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Barter Sales Deal Structurer */}
+            {listing.hasExchange && listing.price > 0 && (
+              <div className="p-4 rounded-[8px] border border-[var(--brand-action)]/30 bg-[var(--brand-soft)]/35 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[13px] font-bold text-[var(--brand-primary)]">
+                    <ArrowLeftRight className="w-4 h-4" />
+                    <span>شبیه‌ساز توافق سریع تهاتر و اقساط ۵۰/۵۰</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAgreementModal(true)}
+                    className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline flex items-center gap-1"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>پیش‌نویس تفاهم‌نامه</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                  <div className="sm:col-span-6">
+                    <label className="block text-[11px] text-[var(--content-neutral-default)] mb-1">
+                      ارزش تقریبی کالای پیشنهادی شما (تومان):
+                    </label>
+                    <input
+                      type="text"
+                      value={dealMyAssetPrice}
+                      onChange={(e) => setDealMyAssetPrice(e.target.value)}
+                      className="kt-input !h-[36px] text-[12px] text-left dir-ltr bg-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-6 flex flex-wrap gap-1 sm:pt-4">
+                    {[
+                      { label: '۵۰٪ ارزش', ratio: 0.5 },
+                      { label: '۷۵٪ ارزش', ratio: 0.75 },
+                      { label: 'سربه‌سر', ratio: 1 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() =>
+                          setDealMyAssetPrice(String(Math.round(listing.price * preset.ratio)))
+                        }
+                        className="px-2.5 py-1.5 rounded-[4px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-[11px] font-medium"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
+                  <div className="p-2.5 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
+                    <div className="text-[10px] text-[var(--content-neutral-default)]">مابه‌التفاوت کل</div>
+                    <div className="font-bold text-[var(--content-neutral-stronger)] mt-0.5">
+                      {dealCalc.absDiff === 0 ? 'سربه‌سر' : formatToman(dealCalc.absDiff)}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
+                    <div className="text-[10px] text-[var(--content-neutral-default)]">۵۰٪ پیش‌پرداخت نقد</div>
+                    <div className="font-bold text-[var(--brand-primary)] mt-0.5">
+                      {dealCalc.absDiff === 0 ? '۰ تومان' : formatToman(dealCalc.halfCash)}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
+                    <div className="text-[10px] text-[var(--content-neutral-default)]">۱۲ قسط ماهیانه (طرح ۵۰/۵۰)</div>
+                    <div className="font-bold text-[var(--semantic-positive)] mt-0.5">
+                      {dealCalc.absDiff === 0 ? 'بدون قسط' : `${formatToman(dealCalc.monthly12)} / ماه`}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const summaryMsg = `سلام، برای آگهی «${listing.title}» قصد معاوضه با دارایی به ارزش ${formatToman(dealCalc.myAsset)} را دارم. ${
+                        dealCalc.absDiff === 0
+                          ? 'ارزش پیشنهادی سربه‌سر است.'
+                          : `مابه‌التفاوت ${formatToman(dealCalc.absDiff)} بوده و حاضرم نصف را نقد (${formatToman(dealCalc.halfCash)}) و مابقی را با اقساط ۵۰/۵۰ (${formatToman(dealCalc.monthly12)} ماهانه) تسویه کنم.`
+                      }`;
+                      onOpenChatWith(listing, false, summaryMsg);
+                    }}
+                    className="kt-button--primary !h-[34px] !px-4 text-[12px]"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>ارسال همین ساختار پیشنهادی در چت</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Key-Value Specification Rows (.kt-base-row) */}
             <div className="divide-y divide-[var(--border-neutral-weaker)] border-t border-b border-[var(--border-neutral-weaker)]">
               <div className="kt-base-row">
@@ -640,15 +819,26 @@ export default function AdDetailModal({
                     <Sparkles className="w-4 h-4" />
                     <span>تطبیق هوشمند معاوضه (هوش مصنوعی آفلاین)</span>
                   </div>
-                  {onOpenAiCompare && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenAiCompare(listing)}
-                      className="text-[11px] font-bold text-[var(--brand-action)] hover:underline"
-                    >
-                      مقایسه دوطرفه با آگهی دیگر ‹
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {onOpenAiCompare && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenAiCompare(listing)}
+                        className="text-[11px] font-bold text-[var(--brand-action)] hover:underline"
+                      >
+                        مقایسه دوطرفه ‹
+                      </button>
+                    )}
+                    {onOpenAiChain && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenAiChain(listing)}
+                        className="text-[11px] font-bold text-[var(--semantic-info)] hover:underline"
+                      >
+                        زنجیره تهاتر ۳ نفره ‹
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2.5">
                   {barterMatches.map((m) => (
@@ -884,7 +1074,94 @@ export default function AdDetailModal({
             </div>
           </div>
         </div>
+
+        {/* Bottom Similar Listings Row ("آگهی‌های مشابه") */}
+        {relatedListings.length > 0 && (
+          <div className="px-4 sm:px-6 md:px-8 py-6 border-t border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)]">
+            <h3 className="text-[16px] font-bold text-[var(--content-neutral-stronger)] mb-3.5">
+              آگهی‌های مشابه و قابل تهاتر در {listing.category}
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {relatedListings.map((rel) => (
+                <button
+                  key={rel.id}
+                  type="button"
+                  onClick={() => onSelectListing(rel)}
+                  className="p-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right flex sm:flex-col gap-2.5 transition-all group"
+                >
+                  <img
+                    src={rel.images[0] || '/ads/fake-1.svg'}
+                    alt={rel.title}
+                    className="w-20 h-20 sm:w-full sm:h-28 rounded-[6px] object-cover shrink-0 bg-[var(--surface-neutral-weak)]"
+                  />
+                  <div className="min-w-0 flex-1 flex flex-col justify-between">
+                    <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)] line-clamp-2 group-hover:text-[var(--brand-primary)]">
+                      {rel.title}
+                    </div>
+                    <div className="mt-1.5 space-y-0.5">
+                      <div className="text-[12px] font-bold text-[var(--brand-primary)] truncate">
+                        {rel.price > 0 ? formatToman(rel.price) : 'توافقی'}
+                      </div>
+                      <div className="text-[11px] text-[var(--content-neutral-default)] truncate">
+                        {rel.city} · {rel.neighborhood}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Barter Safe Pre-Agreement Preview Modal */}
+      {showAgreementModal && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/65 flex items-center justify-center p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowAgreementModal(false);
+          }}
+        >
+          <div
+            className="w-full max-w-[560px] bg-white rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-3.5 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-[15px] text-[var(--brand-primary)]">
+                <FileText className="w-4 h-4" />
+                <span>پیش‌نویس تفاهم‌نامه اولیه تهاتر امن</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAgreementModal(false)}
+                className="w-8 h-8 rounded-full hover:bg-[var(--surface-neutral-weak)] flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-5 space-y-3">
+              <pre className="p-3.5 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] text-[12px] leading-[24px] text-[var(--content-neutral-stronger)] whitespace-pre-wrap font-sans">
+                {agreementDraftText}
+              </pre>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(agreementDraftText).catch(() => {});
+                    setCopiedAgreement(true);
+                    setTimeout(() => setCopiedAgreement(false), 2000);
+                  }}
+                  className="kt-button--primary !h-[36px] !px-4 text-[12px]"
+                >
+                  {copiedAgreement ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedAgreement ? 'متن تفاهم‌نامه کپی شد' : 'کپی متن تفاهم‌نامه'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Fullscreen Image Lightbox */}
       {fullscreenImg && (

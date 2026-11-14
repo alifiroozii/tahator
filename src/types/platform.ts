@@ -64,6 +64,27 @@ export const ROLE_META: Record<UserRole, RoleMeta> = {
   },
 };
 
+export function normalizeUserRole(raw: unknown): UserRole {
+  if (typeof raw !== 'string') return 'user';
+  let candidate = raw.trim();
+  if (candidate.startsWith('"') && candidate.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (typeof parsed === 'string') candidate = parsed.trim();
+    } catch {
+      candidate = candidate.replace(/^"+|"+$/g, '');
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(ROLE_META, candidate)) {
+    return candidate as UserRole;
+  }
+  return 'user';
+}
+
+export function getRoleMeta(role: unknown): RoleMeta {
+  return ROLE_META[normalizeUserRole(role)];
+}
+
 export interface UserProfile {
   name: string;
   phone: string;

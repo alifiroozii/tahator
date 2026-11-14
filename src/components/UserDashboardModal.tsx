@@ -39,6 +39,7 @@ import {
   InstallmentRequest,
   ListingAnalyticsMeta,
   ROLE_META,
+  getRoleMeta,
   SavedSearch,
   UserProfile,
   UserRole,
@@ -245,7 +246,7 @@ export default function UserDashboardModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[1060px] h-full sm:h-[88vh] bg-[var(--surface-neutral-weaker)] sm:rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-[1060px] h-[100dvh] sm:h-[88vh] bg-[var(--surface-neutral-weaker)] sm:rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Dashboard Header */}
@@ -260,7 +261,7 @@ export default function UserDashboardModal({
                   تهاتر من — داشبورد کاربری
                 </h2>
                 <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
-                  نقش: {ROLE_META[userRole].shortTitle}
+                  نقش: {getRoleMeta(userRole).shortTitle}
                 </span>
                 {user.isVerified && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[11px] font-bold">
@@ -287,7 +288,7 @@ export default function UserDashboardModal({
               className="hidden sm:inline-flex kt-button--outlined !h-[34px] !px-3 text-[12px]"
             >
               <ShieldCheck className="w-4 h-4 text-[var(--brand-action)]" />
-              <span>مرکز نقش‌ها ({ROLE_META[userRole].shortTitle})</span>
+              <span>مرکز نقش‌ها ({getRoleMeta(userRole).shortTitle})</span>
             </button>
             <button
               type="button"
@@ -563,7 +564,7 @@ export default function UserDashboardModal({
                       }}
                       className="kt-button--primary !h-[34px] !px-4 text-[12px]"
                     >
-                      باز کردن پنل اختصاصی {ROLE_META[userRole].shortTitle}
+                      باز کردن پنل اختصاصی {getRoleMeta(userRole).shortTitle}
                     </button>
                   </div>
 

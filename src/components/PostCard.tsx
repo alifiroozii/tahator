@@ -9,6 +9,8 @@ import {
   ArrowLeftRight,
   ImageOff,
   TrendingUp,
+  CheckCircle2,
+  Percent,
 } from 'lucide-react';
 import { Listing, formatToman, toPersianDigits } from '@/data/mockData';
 
@@ -28,6 +30,13 @@ export default function PostCard({
   layoutMode = 'horizontal',
 }: PostCardProps) {
   const [imgError, setImgError] = useState(false);
+  const specLine =
+    listing.specs && listing.specs.length > 0
+      ? listing.specs
+          .slice(0, 2)
+          .map((s) => `${s.label}: ${s.value}`)
+          .join(' · ')
+      : listing.subcategory;
 
   const primaryPriceDisplay = () => {
     if (listing.deposit && listing.rent) {
@@ -105,9 +114,16 @@ export default function PostCard({
         </div>
 
         <div className="p-3.5 flex flex-col flex-1 justify-between gap-2">
-          <h3 className="text-[15px] font-bold leading-[24px] text-[var(--content-neutral-stronger)] line-clamp-2">
-            {listing.title}
-          </h3>
+          <div>
+            <h3 className="text-[14px] sm:text-[15px] font-bold leading-[23px] text-[var(--content-neutral-stronger)] line-clamp-2">
+              {listing.title}
+            </h3>
+            {specLine && (
+              <div className="text-[11px] text-[var(--content-neutral-default)] mt-1 truncate">
+                {specLine}
+              </div>
+            )}
+          </div>
 
           <div className="space-y-1.5">
             {listing.hasExchange && listing.exchangeWith && (
@@ -115,8 +131,15 @@ export default function PostCard({
                 معاوضه با: {listing.exchangeWith}
               </div>
             )}
-            <div className="text-[14px] font-bold text-[var(--brand-primary)]">
-              {primaryPriceDisplay()}
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[14px] font-bold text-[var(--brand-primary)] truncate">
+                {primaryPriceDisplay()}
+              </div>
+              {listing.hasInstallmentPlan && (
+                <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)]">
+                  ۵۰/۵۰ قسطی
+                </span>
+              )}
             </div>
             <div className="flex items-center justify-between text-[12px] text-[var(--content-neutral-default)] pt-1 border-t border-[var(--border-neutral-weaker)]">
               <span className="truncate">
@@ -131,19 +154,27 @@ export default function PostCard({
   }
 
   return (
-    <article onClick={() => onSelect(listing)} className="kt-post-card group relative">
+    <article
+      onClick={() => onSelect(listing)}
+      className="kt-post-card !min-h-[132px] sm:!min-h-[170px] !p-3 sm:!p-4 !gap-2.5 sm:!gap-3 group relative"
+    >
       {/* Right Info Column (Start in RTL) */}
       <div className="flex flex-col flex-1 min-w-0 justify-between">
         <div>
-          <h2 className="text-[16px] font-medium leading-[26px] text-[var(--content-neutral-stronger)] line-clamp-2 group-hover:text-[var(--brand-action)] transition-colors">
+          <h2 className="text-[14px] sm:text-[16px] font-medium leading-[23px] sm:leading-[26px] text-[var(--content-neutral-stronger)] line-clamp-2 group-hover:text-[var(--brand-action)] transition-colors">
             {listing.title}
           </h2>
+          {specLine && (
+            <div className="text-[11px] text-[var(--content-neutral-default)] mt-1 truncate">
+              {specLine}
+            </div>
+          )}
         </div>
 
-        <div className="mt-auto space-y-1 pt-2">
+        <div className="mt-auto space-y-1 pt-1.5">
           {/* Barter Tag Line */}
           {listing.hasExchange && (
-            <div className="flex items-center gap-1 text-[12px] text-[var(--brand-primary)] truncate">
+            <div className="flex items-center gap-1 text-[11px] sm:text-[12px] text-[var(--brand-primary)] truncate">
               <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">
                 {listing.exchangeWith ? `معاوضه: ${listing.exchangeWith}` : 'امکان معاوضه دارد'}
@@ -152,17 +183,29 @@ export default function PostCard({
           )}
 
           {/* Price / Status Description */}
-          <div className="text-[14px] leading-[22px] text-[var(--content-neutral-default)]">
-            {primaryPriceDisplay()}
+          <div className="flex items-center gap-1.5 flex-wrap text-[13px] sm:text-[14px] leading-[22px] text-[var(--content-neutral-default)]">
+            <div className="truncate">{primaryPriceDisplay()}</div>
+            {listing.hasInstallmentPlan && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] shrink-0">
+                <Percent className="w-2.5 h-2.5" />
+                <span>۵۰/۵۰</span>
+              </span>
+            )}
           </div>
 
           {/* Bottom Metadata Line */}
-          <div className="flex items-center justify-between gap-2 pt-0.5 text-[12px] leading-[20px]">
+          <div className="flex items-center justify-between gap-2 pt-0.5 text-[11px] sm:text-[12px] leading-[20px]">
             <div className="flex items-center gap-1.5 min-w-0 truncate">
               {listing.badge && (
                 <span className="text-[var(--brand-action)] font-medium shrink-0">
                   {listing.badge}
                 </span>
+              )}
+              {listing.isVerifiedPhotos && (
+                <CheckCircle2
+                  className="w-3.5 h-3.5 text-[var(--semantic-positive)] shrink-0"
+                  aria-label="تصویر تاییدشده مالک"
+                />
               )}
               <span className="text-[var(--content-neutral-default)] truncate">
                 {listing.city} · {listing.publishedAt}
@@ -198,8 +241,8 @@ export default function PostCard({
         </div>
       </div>
 
-      {/* Left 136x136 Square Thumbnail */}
-      <div className="w-[136px] h-[136px] shrink-0 relative rounded-[4px] overflow-hidden bg-[var(--surface-neutral-weak)] border border-[var(--border-neutral-weaker)]/50">
+      {/* Left Responsive Thumbnail */}
+      <div className="w-[104px] h-[104px] sm:w-[136px] sm:h-[136px] shrink-0 relative rounded-[4px] overflow-hidden bg-[var(--surface-neutral-weak)] border border-[var(--border-neutral-weaker)]/50 self-center sm:self-auto">
         {!imgError && listing.images.length > 0 ? (
           <img
             src={listing.images[0]}

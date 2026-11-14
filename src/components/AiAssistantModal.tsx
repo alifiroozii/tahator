@@ -9,6 +9,7 @@ import {
   Calculator,
   Send,
   ShieldCheck,
+  Network,
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -22,11 +23,12 @@ import {
   answerOfflineAiQuery,
   compareTwoListings,
   estimateMarketPriceByForm,
+  findThreeWayBarterChains,
 } from '@/lib/offlineAi';
 
 interface AiAssistantModalProps {
   allListings: Listing[];
-  initialTab?: 'chat' | 'compare' | 'estimator';
+  initialTab?: 'chat' | 'compare' | 'estimator' | 'chain';
   initialListingAId?: string;
   onSelectListing: (listing: Listing) => void;
   onClose: () => void;
@@ -46,7 +48,7 @@ export default function AiAssistantModal({
   onSelectListing,
   onClose,
 }: AiAssistantModalProps) {
-  const [tab, setTab] = useState<'chat' | 'compare' | 'estimator'>(initialTab);
+  const [tab, setTab] = useState<'chat' | 'compare' | 'estimator' | 'chain'>(initialTab);
   const [queryInput, setQueryInput] = useState('');
   const [messages, setMessages] = useState<AiChatMsg[]>([
     {
@@ -95,6 +97,9 @@ export default function AiAssistantModal({
   const listingB = allListings.find((l) => l.id === idB) || allListings[1] || allListings[0];
   const comparison =
     listingA && listingB ? compareTwoListings(listingA, listingB) : null;
+  const barterChains = listingA
+    ? findThreeWayBarterChains(listingA, allListings)
+    : [];
 
   const estCatObj = CATEGORIES.find((c) => c.name === estCategory) || CATEGORIES[0];
   const estimatedResult = estimateMarketPriceByForm({
@@ -108,11 +113,11 @@ export default function AiAssistantModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] flex items-center justify-center p-2 sm:p-4"
+      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] flex items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[840px] h-[88vh] bg-[var(--surface-neutral-weaker)] rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-[880px] h-[100dvh] sm:h-[88vh] bg-[var(--surface-neutral-weaker)] sm:rounded-[10px] shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -146,12 +151,13 @@ export default function AiAssistantModal({
           </button>
         </div>
 
-        {/* 3 Mode Tabs */}
-        <div className="flex border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] text-[12px] sm:text-[13px]">
+        {/* 4 Mode Tabs (Scrollable on Mobile) */}
+        <div className="flex border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] text-[12px] sm:text-[13px] overflow-x-auto no-scrollbar">
           {[
             { id: 'chat', label: 'چت‌بات هوش‌یار تهاتر', icon: MessageSquare },
-            { id: 'compare', label: 'مقایسه دو آگهی برای معاوضه', icon: ArrowLeftRight },
-            { id: 'estimator', label: 'تخمین‌گر هوشمند قیمت بازار', icon: Calculator },
+            { id: 'compare', label: 'مقایسه دو آگهی', icon: ArrowLeftRight },
+            { id: 'chain', label: 'زنجیره تهاتر ۳ ضلعی', icon: Network },
+            { id: 'estimator', label: 'تخمین‌گر قیمت بازار', icon: Calculator },
           ].map((t) => {
             const Icon = t.icon;
             return (
@@ -159,14 +165,14 @@ export default function AiAssistantModal({
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id as typeof tab)}
-                className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                className={`shrink-0 sm:flex-1 py-3 px-3 sm:px-2 flex items-center justify-center gap-1.5 border-b-2 transition-colors whitespace-nowrap ${
                   tab === t.id
                     ? 'border-[var(--brand-action)] text-[var(--brand-primary)] font-bold bg-white'
                     : 'border-transparent text-[var(--content-neutral-default)] hover:text-[var(--content-neutral-stronger)]'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                <span className="truncate">{t.label}</span>
+                <span>{t.label}</span>
               </button>
             );
           })}
@@ -463,6 +469,96 @@ export default function AiAssistantModal({
                   <div className="font-bold text-[14px] mt-1">{formatToman(estimatedResult.maxFair)}</div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'chain' && (
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-5">
+            <div className="p-3.5 rounded-[8px] bg-[var(--brand-soft)]/50 border border-[var(--brand-action)]/25 space-y-2">
+              <div className="flex items-center gap-2 text-[13px] font-bold text-[var(--brand-primary)]">
+                <Network className="w-4 h-4" />
+                <span>کشف حلقه‌های تهاتر ۳ ضلعی (Multi-Hop Barter AI)</span>
+              </div>
+              <p className="text-[12px] text-[var(--content-neutral-default)] leading-[22px]">
+                وقتی مالک هدف مستقیماً به کالای شما نیاز ندارد، موتور آفلاین یک طرف سوم واسط در پلتفرم پیدا می‌کند تا هر سه معامله همزمان با کمترین سرانه نقدی قفل و نهایی شود.
+              </p>
+              <div className="pt-1">
+                <label className="block text-[11px] font-bold mb-1">انتخاب آگهی مبدا شما برای یافتن زنجیره:</label>
+                <select
+                  value={idA}
+                  onChange={(e) => setIdA(e.target.value)}
+                  className="kt-input text-[12px] bg-white"
+                >
+                  {allListings.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.title} ({l.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {barterChains.map((ch, idx) => (
+                <div
+                  key={ch.id}
+                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3 shadow-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                      زنجیره پیشنهادی #{toPersianDigits(idx + 1)}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[11px] font-bold">
+                      {toPersianDigits(ch.compatibilityPercent)}٪ شانس بستن معامله
+                    </span>
+                  </div>
+
+                  {/* 3-Node Visual Loop */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    {[
+                      { label: 'ضلع اول (مبدا)', item: ch.nodeA },
+                      { label: 'ضلع دوم (واسط تهاتر)', item: ch.nodeB },
+                      { label: 'ضلع سوم (تکمیل چرخه)', item: ch.nodeC },
+                    ].map((node) => (
+                      <button
+                        key={node.label}
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onSelectListing(node.item);
+                        }}
+                        className="p-2.5 rounded-[6px] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] bg-[var(--surface-neutral-subtle)] text-right flex items-center gap-2.5 transition-colors"
+                      >
+                        <img
+                          src={node.item.images[0] || '/ads/fake-1.svg'}
+                          alt={node.item.title}
+                          className="w-11 h-11 rounded-[4px] object-cover shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-bold text-[var(--brand-primary)]">
+                            {node.label}
+                          </div>
+                          <div className="text-[12px] font-bold truncate text-[var(--content-neutral-stronger)]">
+                            {node.item.title}
+                          </div>
+                          <div className="text-[10px] text-[var(--content-neutral-default)] truncate">
+                            {node.item.city} ·{' '}
+                            {node.item.price > 0 ? formatToman(node.item.price) : 'توافقی'}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="p-2.5 rounded-[6px] bg-[var(--surface-neutral-subtle)] text-[12px] space-y-1">
+                    <div className="text-[var(--content-neutral-stronger)]">{ch.narrative}</div>
+                    <div className="text-[var(--semantic-positive)] font-bold">
+                      تراز مالی زنجیره: {ch.netCashSettlement}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

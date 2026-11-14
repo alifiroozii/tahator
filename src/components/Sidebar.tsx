@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ChevronRight,
+  ChevronDown,
   Phone,
   ShieldCheck,
   Award,
@@ -12,6 +13,8 @@ import {
   Twitter,
   MessageCircle,
   Headphones,
+  Search,
+  Check,
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -23,9 +26,12 @@ import {
 export interface FilterState {
   category: string | null;
   subcategory: string | null;
-  neighborhood: string;
+  neighborhoods: string[];
   minPrice: string;
   maxPrice: string;
+  minArea: string;
+  roomsFilter: 'all' | '1' | '2' | '3+';
+  conditionFilter: 'all' | 'new' | 'used';
   withPhoto: boolean;
   onlyExchange: boolean;
   onlyInstallment: boolean;
@@ -58,6 +64,8 @@ export default function Sidebar({
   isMobileDrawer = false,
   onCloseMobileDrawer,
 }: SidebarProps) {
+  const [nbOpen, setNbOpen] = useState(false);
+  const [nbQuery, setNbQuery] = useState('');
   const sidebarCategories = CATEGORIES.filter((c) => c.showInSidebar);
   const activeCategoryObj = CATEGORIES.find((c) => c.name === filters.category);
 
@@ -70,6 +78,18 @@ export default function Sidebar({
   const neighborhoods = activeCityObj
     ? activeCityObj.neighborhoods
     : TEHRAN_NEIGHBORHOODS;
+
+  const filteredNbs = neighborhoods.filter((nb) =>
+    nb.includes(nbQuery.trim())
+  );
+
+  const toggleNb = (nb: string) => {
+    const exists = filters.neighborhoods.includes(nb);
+    const next = exists
+      ? filters.neighborhoods.filter((x) => x !== nb)
+      : [...filters.neighborhoods, nb];
+    onUpdateFilters({ neighborhoods: next });
+  };
 
   return (
     <aside
@@ -170,24 +190,170 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* 📍 انتخاب محله */}
+      {/* 📍 انتخاب چندمحله‌ای با جستجو */}
       <div className="py-3.5 border-b border-[var(--border-neutral-weaker)]">
-        <label className="block text-[13px] font-bold text-[var(--content-neutral-stronger)] mb-2">
-          📍 انتخاب محله
-        </label>
-        <select
-          value={filters.neighborhood}
-          onChange={(e) => onUpdateFilters({ neighborhood: e.target.value })}
-          className="kt-input !h-[38px] text-[13px]"
+        <button
+          type="button"
+          onClick={() => setNbOpen((prev) => !prev)}
+          className="w-full flex items-center justify-between text-[13px] font-bold text-[var(--content-neutral-stronger)]"
         >
-          <option value="">همه محله‌ها</option>
-          {neighborhoods.map((nb) => (
-            <option key={nb} value={nb}>
-              {nb}
-            </option>
-          ))}
-        </select>
+          <span>📍 انتخاب محله (چندانتخابی)</span>
+          <span className="flex items-center gap-1 text-[11px] font-medium text-[var(--brand-primary)]">
+            {filters.neighborhoods.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-[var(--brand-soft)]">
+                {toPersianDigits(filters.neighborhoods.length)} محله
+              </span>
+            )}
+            <ChevronDown
+              className={`w-4 h-4 text-[var(--content-neutral-default)] transition-transform ${
+                nbOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </span>
+        </button>
+
+        {filters.neighborhoods.length > 0 && !nbOpen && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {filters.neighborhoods.map((nb) => (
+              <button
+                key={nb}
+                type="button"
+                onClick={() => toggleNb(nb)}
+                className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-medium"
+              >
+                {nb} ×
+              </button>
+            ))}
+          </div>
+        )}
+
+        {nbOpen && (
+          <div className="mt-2.5 space-y-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-[var(--content-neutral-default)] absolute right-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={nbQuery}
+                onChange={(e) => setNbQuery(e.target.value)}
+                placeholder="جستجوی محله..."
+                className="kt-input !h-[34px] pr-8 text-[12px]"
+              />
+            </div>
+            <div className="max-h-[160px] overflow-y-auto border border-[var(--border-neutral-weaker)] rounded-[6px] divide-y divide-[var(--border-neutral-weaker)] bg-white">
+              {filteredNbs.map((nb) => {
+                const checked = filters.neighborhoods.includes(nb);
+                return (
+                  <button
+                    key={nb}
+                    type="button"
+                    onClick={() => toggleNb(nb)}
+                    className="w-full px-2.5 py-1.5 flex items-center justify-between text-[12px] hover:bg-[var(--surface-neutral-weak)]"
+                  >
+                    <span className={checked ? 'font-bold text-[var(--brand-primary)]' : ''}>
+                      {nb}
+                    </span>
+                    <span
+                      className={`w-4 h-4 rounded border flex items-center justify-center ${
+                        checked
+                          ? 'bg-[var(--brand-action)] border-[var(--brand-action)] text-white'
+                          : 'border-[var(--border-neutral-weak)]'
+                      }`}
+                    >
+                      {checked && <Check className="w-3 h-3" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {filters.neighborhoods.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onUpdateFilters({ neighborhoods: [] })}
+                className="text-[11px] text-[var(--brand-action)] hover:underline"
+              >
+                پاک کردن محله‌های انتخابی
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Category-Specific Dynamic Filters (Real Estate / Vehicles / Digital) */}
+      {filters.category === 'املاک' && (
+        <div className="py-3.5 border-b border-[var(--border-neutral-weaker)] space-y-2.5">
+          <div className="text-[13px] font-bold text-[var(--brand-primary)]">
+            🏠 فیلترهای اختصاصی املاک
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              placeholder="حداقل متراژ (متر)"
+              value={filters.minArea}
+              onChange={(e) => onUpdateFilters({ minArea: e.target.value })}
+              className="kt-input !h-[36px] text-[12px]"
+            />
+          </div>
+          <div>
+            <div className="text-[11px] text-[var(--content-neutral-default)] mb-1">
+              تعداد اتاق خواب
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { id: 'all', label: 'همه' },
+                { id: '1', label: '۱ خواب' },
+                { id: '2', label: '۲ خواب' },
+                { id: '3+', label: '۳+ خواب' },
+              ].map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() =>
+                    onUpdateFilters({ roomsFilter: r.id as FilterState['roomsFilter'] })
+                  }
+                  className={`h-[30px] rounded-[4px] border text-[11px] ${
+                    filters.roomsFilter === r.id
+                      ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                      : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(filters.category === 'وسایل نقلیه' || filters.category === 'کالای دیجیتال') && (
+        <div className="py-3.5 border-b border-[var(--border-neutral-weaker)] space-y-2">
+          <div className="text-[13px] font-bold text-[var(--brand-primary)]">
+            {filters.category === 'وسایل نقلیه' ? '🚗 فیلترهای اختصاصی خودرو' : '📱 وضعیت کالای دیجیتال'}
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {[
+              { id: 'all', label: 'همه' },
+              { id: 'new', label: 'صفر / در حد نو' },
+              { id: 'used', label: 'کارکرده' },
+            ].map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() =>
+                  onUpdateFilters({ conditionFilter: c.id as FilterState['conditionFilter'] })
+                }
+                className={`h-[30px] rounded-[4px] border text-[11px] ${
+                  filters.conditionFilter === c.id
+                    ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                    : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 💰 فیلتر قیمت (تومان) */}
       <div className="py-3.5 border-b border-[var(--border-neutral-weaker)] space-y-2.5">
@@ -222,7 +388,21 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* 📷 فقط آگهی‌های عکس‌دار */}
+      {/* 🔄 جستجو بر اساس کالای مورد معاوضه */}
+      <div className="py-3.5 border-b border-[var(--border-neutral-weaker)] space-y-2">
+        <label className="block text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+          🔄 کالای مورد معاوضه
+        </label>
+        <input
+          type="text"
+          value={filters.exchangeKeyword}
+          onChange={(e) => onUpdateFilters({ exchangeKeyword: e.target.value })}
+          placeholder="مثلاً: خودرو، آپارتمان، گوشی..."
+          className="kt-input !h-[36px] text-[12px]"
+        />
+      </div>
+
+      {/* 📷 وضعیت آگهی و تهاتر */}
       <div className="py-3.5 border-b border-[var(--border-neutral-weaker)] space-y-2.5">
         <label className="flex items-center gap-2.5 cursor-pointer select-none">
           <input
@@ -244,7 +424,43 @@ export default function Sidebar({
             className="accent-[var(--brand-action)] w-4 h-4 rounded"
           />
           <span className="text-[13px] font-medium text-[var(--content-neutral-stronger)]">
-            فقط دارای امکان معاوضه
+            🔄 فقط دارای امکان معاوضه
+          </span>
+        </label>
+
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={filters.onlyInstallment}
+            onChange={(e) => onUpdateFilters({ onlyInstallment: e.target.checked })}
+            className="accent-[var(--brand-action)] w-4 h-4 rounded"
+          />
+          <span className="text-[13px] font-medium text-[var(--content-neutral-stronger)]">
+            ٪ دارای اقساط ۵۰/۵۰ تهاتر آپ
+          </span>
+        </label>
+
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={filters.onlyUrgent}
+            onChange={(e) => onUpdateFilters({ onlyUrgent: e.target.checked })}
+            className="accent-[var(--brand-action)] w-4 h-4 rounded"
+          />
+          <span className="text-[13px] font-medium text-[var(--content-neutral-stronger)]">
+            ⚡ فقط آگهی‌های فوری
+          </span>
+        </label>
+
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={filters.onlyVerifiedPhotos}
+            onChange={(e) => onUpdateFilters({ onlyVerifiedPhotos: e.target.checked })}
+            className="accent-[var(--brand-action)] w-4 h-4 rounded"
+          />
+          <span className="text-[13px] font-medium text-[var(--content-neutral-stronger)]">
+            ✓ تصاویر تأییدشده مالک
           </span>
         </label>
       </div>

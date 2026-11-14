@@ -19,6 +19,9 @@ import {
   Sparkles,
   Shield,
   Bell,
+  Map as MapIcon,
+  CheckCircle2,
+  Zap,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Sidebar, { FilterState } from '@/components/Sidebar';
@@ -27,6 +30,7 @@ import AdDetailModal from '@/components/AdDetailModal';
 import UserDashboardModal from '@/components/UserDashboardModal';
 import RolePanelModal from '@/components/RolePanelModal';
 import AiAssistantModal from '@/components/AiAssistantModal';
+import MapFeedView from '@/components/MapFeedView';
 import {
   CategoriesModal,
   CityModal,
@@ -47,6 +51,8 @@ import {
   AiConfig,
   DEFAULT_AI_CONFIG,
   analyzeChatSafety,
+  extractAreaFromListing,
+  extractRoomsFromListing,
 } from '@/lib/offlineAi';
 import {
   AdModerationStatus,
@@ -66,6 +72,8 @@ import {
   ListingAnalyticsMeta,
   PlatformUserAccount,
   ROLE_META,
+  getRoleMeta,
+  normalizeUserRole,
   SavedSearch,
   SupportTicket,
   TariffConfig,
@@ -77,9 +85,12 @@ import {
 const DEFAULT_FILTERS: FilterState = {
   category: null,
   subcategory: null,
-  neighborhood: '',
+  neighborhoods: [],
   minPrice: '',
   maxPrice: '',
+  minArea: '',
+  roomsFilter: 'all',
+  conditionFilter: 'all',
   withPhoto: false,
   onlyExchange: false,
   onlyInstallment: false,
@@ -194,10 +205,12 @@ export default function HomePage() {
   const [dashboardTab, setDashboardTab] = useState<DashboardTab>('myAds');
   const [showRolePanelModal, setShowRolePanelModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
-  const [aiModalTab, setAiModalTab] = useState<'chat' | 'compare' | 'estimator'>('chat');
+  const [aiModalTab, setAiModalTab] = useState<'chat' | 'compare' | 'estimator' | 'chain'>('chat');
   const [aiCompareListingId, setAiCompareListingId] = useState<string | undefined>(undefined);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const [showMapView, setShowMapView] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
   const triggerToast = (msg: string) => {
@@ -206,38 +219,84 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    try {
-      const savedAds = localStorage.getItem('tahator_user_ads');
-      if (savedAds) {
-        const parsed = JSON.parse(savedAds) as Listing[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setListings([...parsed, ...INITIAL_LISTINGS]);
-        }
+    const readJsonSafe = <T,>(key: string, validate?: (val: unknown) => boolean): T | null => {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (validate && !validate(parsed)) return null;
+        return parsed as T;
+      } catch {
+        return null;
       }
-      const savedBookmarks = localStorage.getItem('tahator_bookmarks');
-      if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
-      const savedNotes = localStorage.getItem('tahator_notes');
-      if (savedNotes) setNotes(JSON.parse(savedNotes));
-      const savedRecent = localStorage.getItem('tahator_recent');
-      if (savedRecent) setRecentIds(JSON.parse(savedRecent));
-      const savedProfile = localStorage.getItem('tahator_profile_v2');
-      if (savedProfile) setUserProfile(JSON.parse(savedProfile));
-      const savedRole = localStorage.getItem('tahator_role_v2');
-      if (savedRole) setUserRole(savedRole as UserRole);
-      const savedWallet = localStorage.getItem('tahator_wallet_v2');
-      if (savedWallet) setWalletBalance(Number(savedWallet));
-      const savedTx = localStorage.getItem('tahator_tx_v2');
-      if (savedTx) setTransactions(JSON.parse(savedTx));
-      const savedOffers = localStorage.getItem('tahator_offers_v2');
-      if (savedOffers) setBarterOffers(JSON.parse(savedOffers));
-      const savedSearchesLS = localStorage.getItem('tahator_searches_v2');
-      if (savedSearchesLS) setSavedSearches(JSON.parse(savedSearchesLS));
-      const savedAi = localStorage.getItem('tahator_ai_config');
-      if (savedAi) setAiConfig(JSON.parse(savedAi));
+    };
+
+    const savedAds = readJsonSafe<Listing[]>('tahator_user_ads', Array.isArray);
+    if (savedAds && savedAds.length > 0) {
+      setListings([...savedAds, ...INITIAL_LISTINGS]);
+    }
+
+    const savedBookmarks = readJsonSafe<string[]>('tahator_bookmarks', Array.isArray);
+    if (savedBookmarks) setBookmarks(savedBookmarks);
+
+    const savedNotes = readJsonSafe<Record<string, string>>(
+      'tahator_notes',
+      (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+    );
+    if (savedNotes) setNotes(savedNotes);
+
+    const savedRecent = readJsonSafe<string[]>('tahator_recent', Array.isArray);
+    if (savedRecent) setRecentIds(savedRecent);
+
+    const savedProfile = readJsonSafe<UserProfile>(
+      'tahator_profile_v2',
+      (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+    );
+    if (savedProfile) setUserProfile(savedProfile);
+
+    try {
+      const rawRole = localStorage.getItem('tahator_role_v2');
+      if (rawRole) {
+        setUserRole(normalizeUserRole(rawRole));
+      }
     } catch {
       // ignore storage errors
     }
+
+    const savedWallet = readJsonSafe<number>(
+      'tahator_wallet_v2',
+      (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+    );
+    if (savedWallet !== null) setWalletBalance(savedWallet);
+
+    const savedTx = readJsonSafe<WalletTransaction[]>('tahator_tx_v2', Array.isArray);
+    if (savedTx) setTransactions(savedTx);
+
+    const savedOffers = readJsonSafe<BarterOffer[]>('tahator_offers_v2', Array.isArray);
+    if (savedOffers) setBarterOffers(savedOffers);
+
+    const savedSearchesLS = readJsonSafe<SavedSearch[]>('tahator_searches_v2', Array.isArray);
+    if (savedSearchesLS) setSavedSearches(savedSearchesLS);
+
+    const savedAi = readJsonSafe<AiConfig>(
+      'tahator_ai_config',
+      (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+    );
+    if (savedAi) setAiConfig(savedAi);
+
+    const savedRecentSearch = readJsonSafe<string[]>('tahator_recent_searches', Array.isArray);
+    if (savedRecentSearch) setRecentSearches(savedRecentSearch);
   }, []);
+
+  const handleRecordSearch = (term: string) => {
+    const clean = term.trim();
+    if (!clean) return;
+    setRecentSearches((prev) => {
+      const next = [clean, ...prev.filter((t) => t !== clean)].slice(0, 6);
+      persistSafe('tahator_recent_searches', next);
+      return next;
+    });
+  };
 
   const persistSafe = (key: string, value: unknown) => {
     try {
@@ -490,7 +549,11 @@ export default function HomePage() {
     triggerToast(`${toPersianDigits(batchCount)} آگهی بیشتر نمایش داده شد`);
   };
 
-  const handleOpenChatWith = (listing?: Listing, isAdmin = false) => {
+  const handleOpenChatWith = (
+    listing?: Listing,
+    isAdmin = false,
+    prefillMessage?: string
+  ) => {
     if (isAdmin || !listing) {
       setActiveThreadId('admin-support');
       setShowChatModal(true);
@@ -504,21 +567,48 @@ export default function HomePage() {
     });
 
     const threadId = `seller-${listing.id}`;
+    const nowTime = new Date().toLocaleTimeString('fa-IR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
     setThreads((prev) => {
-      if (prev.some((t) => t.id === threadId)) return prev;
+      const existing = prev.find((t) => t.id === threadId);
+      if (existing) {
+        if (!prefillMessage) return prev;
+        return prev.map((t) =>
+          t.id === threadId
+            ? {
+                ...t,
+                messages: [
+                  ...t.messages,
+                  { id: `msg-${Date.now()}`, sender: 'me', text: prefillMessage, time: nowTime },
+                ],
+              }
+            : t
+        );
+      }
+      const initialMsgs: ChatThread['messages'] = [
+        {
+          id: `init-${Date.now()}`,
+          sender: 'other',
+          text: `سلام! آگهی «${listing.title}» موجود است. سوال یا پیشنهاد معاوضه‌ای دارید در خدمتم.`,
+          time: 'الان',
+        },
+      ];
+      if (prefillMessage) {
+        initialMsgs.push({
+          id: `msg-${Date.now() + 1}`,
+          sender: 'me',
+          text: prefillMessage,
+          time: nowTime,
+        });
+      }
       return [
         {
           id: threadId,
           title: `${listing.sellerName} (${listing.neighborhood})`,
           subtitle: listing.title,
-          messages: [
-            {
-              id: `init-${Date.now()}`,
-              sender: 'other',
-              text: `سلام! آگهی «${listing.title}» موجود است. سوال یا پیشنهاد معاوضه‌ای دارید در خدمتم.`,
-              time: 'الان',
-            },
-          ],
+          messages: initialMsgs,
         },
         ...prev,
       ];
@@ -637,9 +727,10 @@ export default function HomePage() {
   };
 
   const handleSwitchRole = (role: UserRole) => {
-    setUserRole(role);
-    persistSafe('tahator_role_v2', role);
-    triggerToast(`نقش فعال به «${ROLE_META[role].shortTitle}» تغییر یافت`);
+    const safeRole = normalizeUserRole(role);
+    setUserRole(safeRole);
+    persistSafe('tahator_role_v2', safeRole);
+    triggerToast(`نقش فعال به «${getRoleMeta(safeRole).shortTitle}» تغییر یافت`);
   };
 
   const updateFilters = (partial: Partial<FilterState>) => {
@@ -651,12 +742,36 @@ export default function HomePage() {
     const exQ = filters.exchangeKeyword.trim().toLowerCase();
     const minP = filters.minPrice ? Number(filters.minPrice) : null;
     const maxP = filters.maxPrice ? Number(filters.maxPrice) : null;
+    const minArea = filters.minArea ? Number(filters.minArea) : null;
 
     const list = listings.filter((item) => {
       if (selectedCities.length > 0 && !selectedCities.includes(item.city)) return false;
       if (filters.category && item.category !== filters.category) return false;
       if (filters.subcategory && item.subcategory !== filters.subcategory) return false;
-      if (filters.neighborhood && item.neighborhood !== filters.neighborhood) return false;
+      if (
+        filters.neighborhoods.length > 0 &&
+        !filters.neighborhoods.includes(item.neighborhood)
+      ) {
+        return false;
+      }
+
+      if (minArea !== null) {
+        const area = extractAreaFromListing(item);
+        if (area === null || area < minArea) return false;
+      }
+      if (filters.roomsFilter !== 'all') {
+        const rooms = extractRoomsFromListing(item);
+        if (rooms === null) return false;
+        if (filters.roomsFilter === '3+' ? rooms < 3 : String(rooms) !== filters.roomsFilter) {
+          return false;
+        }
+      }
+      if (filters.conditionFilter !== 'all') {
+        const hay = `${item.title} ${item.description} ${(item.specs || []).map((s) => s.value).join(' ')}`;
+        const looksNew = hay.includes('نو') || hay.includes('صفر') || hay.includes('آکبند') || hay.includes('۱۴۰۵') || hay.includes('۱۴۰۴');
+        if (filters.conditionFilter === 'new' && !looksNew) return false;
+        if (filters.conditionFilter === 'used' && looksNew && !hay.includes('کارکرده')) return false;
+      }
 
       if (q) {
         const haystack =
@@ -737,6 +852,11 @@ export default function HomePage() {
         onOpenCityModal={() => setShowCityModal(true)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        activeCategory={filters.category}
+        allListings={listings}
+        recentSearches={recentSearches}
+        onRecordSearch={handleRecordSearch}
+        onSelectListing={handleSelectListing}
         onSelectCategory={(cat, sub = null) =>
           updateFilters({ category: cat, subcategory: sub || null })
         }
@@ -760,15 +880,42 @@ export default function HomePage() {
         userRole={userRole}
       />
 
-      {/* Mobile Quick Category, AI & Role Strip */}
-      <div className="lg:hidden border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-weaker)] px-3 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+      {/* Mobile & Tablet Quick Category, City, Map, AI & Role Strip */}
+      <div className="xl:hidden border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-weaker)] px-3 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <button
+          type="button"
+          onClick={() => setShowCityModal(true)}
+          className="sm:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
+        >
+          <MapPin className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+          <span>{selectedCities.length === 1 ? selectedCities[0] : 'شهر'}</span>
+        </button>
         <button
           type="button"
           onClick={() => setShowMobileSidebar(true)}
-          className="shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1.5"
+          className="lg:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1.5"
         >
           <SlidersHorizontal className="w-3.5 h-3.5" />
           <span>فیلترها</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCategoriesModal(true)}
+          className="shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
+        >
+          <span>دسته‌بندی‌ها</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowMapView((prev) => !prev)}
+          className={`shrink-0 h-[32px] px-3 rounded-full border text-[12px] font-medium flex items-center gap-1 ${
+            showMapView
+              ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+              : 'border-[var(--border-neutral-weaker)]'
+          }`}
+        >
+          <MapIcon className="w-3.5 h-3.5 text-[var(--brand-action)]" />
+          <span>نقشه</span>
         </button>
         <button
           type="button"
@@ -776,7 +923,7 @@ export default function HomePage() {
             setAiModalTab('chat');
             setShowAiModal(true);
           }}
-          className="shrink-0 h-[32px] px-3 rounded-full border border-[var(--brand-action)]/40 bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[12px] font-bold flex items-center gap-1"
+          className="md:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--brand-action)]/40 bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[12px] font-bold flex items-center gap-1"
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>هوش مصنوعی</span>
@@ -784,10 +931,10 @@ export default function HomePage() {
         <button
           type="button"
           onClick={() => setShowRolePanelModal(true)}
-          className="shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
+          className="lg:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
         >
           <Shield className="w-3.5 h-3.5 text-[var(--brand-action)]" />
-          <span>نقش: {ROLE_META[userRole].shortTitle}</span>
+          <span>نقش: {getRoleMeta(userRole).shortTitle}</span>
         </button>
         <button
           type="button"
@@ -804,7 +951,7 @@ export default function HomePage() {
         <button
           type="button"
           onClick={() => setShowFacilitiesModal(true)}
-          className="shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
+          className="lg:hidden shrink-0 h-[32px] px-3 rounded-full border border-[var(--border-neutral-weaker)] text-[12px] font-medium flex items-center gap-1"
         >
           <Calculator className="w-3.5 h-3.5 text-[var(--brand-action)]" />
           <span>تسهیلات</span>
@@ -827,7 +974,7 @@ export default function HomePage() {
                 subcategory: null,
               })
             }
-            className={`shrink-0 h-[32px] px-3 rounded-full border text-[12px] transition-colors ${
+            className={`lg:hidden shrink-0 h-[32px] px-3 rounded-full border text-[12px] transition-colors ${
               filters.category === c.name
                 ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
                 : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
@@ -886,11 +1033,18 @@ export default function HomePage() {
 
               {/* Active Filter Chips */}
               {(filters.category ||
-                filters.neighborhood ||
+                filters.neighborhoods.length > 0 ||
                 filters.onlyExchange ||
+                filters.onlyInstallment ||
+                filters.onlyUrgent ||
+                filters.onlyVerifiedPhotos ||
                 filters.withPhoto ||
                 filters.minPrice ||
                 filters.maxPrice ||
+                filters.minArea ||
+                filters.roomsFilter !== 'all' ||
+                filters.conditionFilter !== 'all' ||
+                filters.exchangeKeyword ||
                 filters.timeFilter !== 'all' ||
                 searchQuery) && (
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -913,17 +1067,24 @@ export default function HomePage() {
                       </button>
                     </span>
                   )}
-                  {filters.neighborhood && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[var(--surface-neutral-weak)] text-[12px]">
-                      <span>محله: {filters.neighborhood}</span>
+                  {filters.neighborhoods.map((nb) => (
+                    <span
+                      key={nb}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[var(--surface-neutral-weak)] text-[12px]"
+                    >
+                      <span>محله: {nb}</span>
                       <button
                         type="button"
-                        onClick={() => updateFilters({ neighborhood: '' })}
+                        onClick={() =>
+                          updateFilters({
+                            neighborhoods: filters.neighborhoods.filter((x) => x !== nb),
+                          })
+                        }
                       >
                         <X className="w-3 h-3" />
                       </button>
                     </span>
-                  )}
+                  ))}
                   {filters.onlyExchange && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[12px] font-medium">
                       <span>فقط دارای معاوضه</span>
@@ -935,12 +1096,48 @@ export default function HomePage() {
                       </button>
                     </span>
                   )}
+                  {filters.onlyInstallment && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[12px] font-medium">
+                      <span>اقساط ۵۰/۵۰</span>
+                      <button
+                        type="button"
+                        onClick={() => updateFilters({ onlyInstallment: false })}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {filters.exchangeKeyword && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[12px] font-medium">
+                      <span>معاوضه با: {filters.exchangeKeyword}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateFilters({ exchangeKeyword: '' })}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Save Search + Sort & Card Layout Switcher */}
+            {/* Map Toggle + Save Search + Sort & Card Layout Switcher */}
             <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowMapView((prev) => !prev)}
+                className={`kt-button--outlined !h-[34px] !px-2.5 text-[12px] ${
+                  showMapView
+                    ? '!bg-[var(--brand-soft)] !border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                    : ''
+                }`}
+                title="نمایش آگهی‌ها روی نقشه"
+              >
+                <MapIcon className="w-3.5 h-3.5 text-[var(--brand-action)]" />
+                <span>نمایش روی نقشه</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleSaveCurrentSearch}
@@ -992,6 +1189,102 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+
+          {/* Desktop Quick Barter & Sales Conversion Filter Chips */}
+          <div className="hidden lg:flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+            <button
+              type="button"
+              onClick={() => updateFilters({ onlyExchange: !filters.onlyExchange })}
+              className={`shrink-0 h-[30px] px-3 rounded-full border text-[12px] flex items-center gap-1.5 transition-colors ${
+                filters.onlyExchange
+                  ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                  : 'border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)]'
+              }`}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span>فقط قابل معاوضه</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFilters({ onlyInstallment: !filters.onlyInstallment })}
+              className={`shrink-0 h-[30px] px-3 rounded-full border text-[12px] flex items-center gap-1.5 transition-colors ${
+                filters.onlyInstallment
+                  ? 'bg-[var(--semantic-warning-soft)] border-[var(--semantic-warning)] text-[var(--semantic-warning)] font-bold'
+                  : 'border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)]'
+              }`}
+            >
+              <Percent className="w-3.5 h-3.5" />
+              <span>اقساط ۵۰/۵۰</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFilters({ onlyUrgent: !filters.onlyUrgent })}
+              className={`shrink-0 h-[30px] px-3 rounded-full border text-[12px] flex items-center gap-1.5 transition-colors ${
+                filters.onlyUrgent
+                  ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                  : 'border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)]'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>فقط فوری</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFilters({ onlyVerifiedPhotos: !filters.onlyVerifiedPhotos })}
+              className={`shrink-0 h-[30px] px-3 rounded-full border text-[12px] flex items-center gap-1.5 transition-colors ${
+                filters.onlyVerifiedPhotos
+                  ? 'bg-[var(--semantic-positive-soft)] border-[var(--semantic-positive)] text-[var(--semantic-positive)] font-bold'
+                  : 'border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)]'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>تایید اصالت تصویر</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                updateFilters({
+                  onlyExchange: true,
+                  exchangeKeyword: filters.exchangeKeyword === 'خودرو' ? '' : 'خودرو',
+                })
+              }
+              className={`shrink-0 h-[30px] px-3 rounded-full border text-[12px] transition-colors ${
+                filters.exchangeKeyword === 'خودرو'
+                  ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                  : 'border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)]'
+              }`}
+            >
+              معاوضه با خودرو
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                updateFilters({
+                  onlyExchange: true,
+                  exchangeKeyword: filters.exchangeKeyword === 'ملک' ? '' : 'ملک',
+                })
+              }
+              className={`shrink-0 h-[30px] px-3 rounded-full border text-[12px] transition-colors ${
+                filters.exchangeKeyword === 'ملک'
+                  ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                  : 'border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)]'
+              }`}
+            >
+              معاوضه با ملک
+            </button>
+          </div>
+
+          {showMapView && (
+            <MapFeedView
+              listings={filteredListings}
+              onSelectListing={handleSelectListing}
+              onFilterCity={(city) => {
+                setSelectedCities([city]);
+                triggerToast(`آگهی‌های شهر ${city} روی نقشه انتخاب شد`);
+              }}
+              onCloseMap={() => setShowMapView(false)}
+            />
+          )}
 
           {/* 3-Column Listing Grid */}
           {filteredListings.length === 0 ? (
@@ -1196,6 +1489,12 @@ export default function HomePage() {
             setSelectedListing(null);
             setAiCompareListingId(ad.id);
             setAiModalTab('compare');
+            setShowAiModal(true);
+          }}
+          onOpenAiChain={(ad) => {
+            setSelectedListing(null);
+            setAiCompareListingId(ad.id);
+            setAiModalTab('chain');
             setShowAiModal(true);
           }}
           onSubmitBarterOffer={handleSubmitBarterOffer}
@@ -1416,7 +1715,7 @@ export default function HomePage() {
             setPlatformUsers((prev) =>
               prev.map((u) => (u.id === userId ? { ...u, role } : u))
             );
-            triggerToast(`نقش کاربر به «${ROLE_META[role].shortTitle}» تغییر یافت`);
+            triggerToast(`نقش کاربر به «${getRoleMeta(role).shortTitle}» تغییر یافت`);
           }}
           onTogglePlatformUserBan={(userId) => {
             setPlatformUsers((prev) =>

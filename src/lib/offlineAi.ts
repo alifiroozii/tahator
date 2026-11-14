@@ -755,3 +755,137 @@ export function answerOfflineAiQuery(
     ],
   };
 }
+
+export interface ThreeWayBarterChain {
+  id: string;
+  nodeA: Listing;
+  nodeB: Listing;
+  nodeC: Listing;
+  compatibilityPercent: number;
+  netCashSettlement: string;
+  narrative: string;
+}
+
+/**
+ * Extracts numeric area (square meters) from a real-estate listing specs/title.
+ */
+export function extractAreaFromListing(listing: Listing): number | null {
+  const fromSpecs = listing.specs?.find((s) => s.label.includes('متراژ'))?.value || '';
+  const combined = normalizeDigits(`${fromSpecs} ${listing.title}`);
+  const match = combined.match(/(\d+)\s*متر/);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Extracts room count from a real-estate listing specs/title.
+ */
+export function extractRoomsFromListing(listing: Listing): number | null {
+  const fromSpecs = listing.specs?.find((s) => s.label.includes('اتاق'))?.value || '';
+  const norm = normalizeDigits(fromSpecs);
+  const direct = norm.match(/\d+/);
+  if (direct) return Number(direct[0]);
+  const inTitle = normalizeDigits(listing.title).match(/(\d+)\s*خواب/);
+  return inTitle ? Number(inTitle[1]) : null;
+}
+
+/**
+ * Returns up to 4 similar/comparable listings in the same category or close budget.
+ */
+export function getRelatedListings(listing: Listing, allListings: Listing[]): Listing[] {
+  return allListings
+    .filter((item) => item.id !== listing.id)
+    .map((candidate) => {
+      let score = 0;
+      if (candidate.category === listing.category) score += 40;
+      if (candidate.subcategory === listing.subcategory) score += 25;
+      if (candidate.city === listing.city) score += 15;
+      if (candidate.hasExchange === listing.hasExchange) score += 10;
+      if (listing.price > 0 && candidate.price > 0) {
+        const ratio = Math.min(listing.price, candidate.price) / Math.max(listing.price, candidate.price);
+        score += Math.round(ratio * 20);
+      }
+      return { candidate, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .map((x) => x.candidate);
+}
+
+/**
+ * Discovers multi-hop 3-way barter chains (A -> B -> C -> A) for unlocking blocked direct trades.
+ */
+export function findThreeWayBarterChains(
+  anchorListing: Listing,
+  allListings: Listing[]
+): ThreeWayBarterChain[] {
+  const exchangePool = allListings.filter((l) => l.id !== anchorListing.id && l.hasExchange);
+  if (exchangePool.length < 2) return [];
+
+  const chains: ThreeWayBarterChain[] = [];
+  const usedPairs = new Set<string>();
+
+  for (let i = 0; i < exchangePool.length && chains.length < 3; i += 1) {
+    const b = exchangePool[i];
+    if (b.category === anchorListing.category && exchangePool.length > 3) continue;
+
+    for (let j = i + 1; j < exchangePool.length && chains.length < 3; j += 1) {
+      const c = exchangePool[j];
+      if (c.category === b.category && exchangePool.length > 4) continue;
+      const pairKey = [anchorListing.id, b.id, c.id].sort().join('-');
+      if (usedPairs.has(pairKey)) continue;
+      usedPairs.add(pairKey);
+
+      const pA = anchorListing.price || 1_500_000_000;
+      const pB = b.price || 1_500_000_000;
+      const pC = c.price || 1_500_000_000;
+      const spread = Math.max(pA, pB, pC) - Math.min(pA, pB, pC);
+      const compat = Math.min(96, Math.max(78, Math.round(89 + deterministicUnit(pairKey) * 7)));
+
+      chains.push({
+        id: `chain-${anchorListing.id}-${b.id}-${c.id}`,
+        nodeA: anchorListing,
+        nodeB: b,
+        nodeC: c,
+        compatibilityPercent: compat,
+        netCashSettlement:
+          spread > 0
+            ? `تراز مالی زنجیره با ${formatToman(Math.round(spread * 0.25))} سرانه یا اقساط ۵۰/۵۰ بسته می‌شود`
+            : 'تقریباً سربه‌سر بدون نیاز به نقدینگی سنگین',
+        narrative: `مالک «${anchorListing.subcategory}» دارایی شما را برای «${b.subcategory}» معاوضه می‌کند و «${c.title.slice(0, 28)}...» ضلع سوم تهاتر را کامل می‌سازد.`,
+      });
+    }
+  }
+
+  return chains;
+}
+
+/**
+ * Generates an instant structured barter pre-agreement draft for copy/export in sales conversion.
+ */
+export function generateBarterAgreementDraft(params: {
+  listingTitle: string;
+  listingCode: string;
+  listingPrice: number;
+  offeredTitle: string;
+  offeredPrice: number;
+  sellerName: string;
+  useInstallment: boolean;
+}): string {
+  const diff = Math.abs((params.listingPrice || 0) - (params.offeredPrice || 0));
+  const half = Math.round(diff * 0.5);
+  const installmentPart = params.useInstallment && diff > 0
+    ? `نصف نقد (${formatToman(half)}) و مابقی طی ۱۲ قسط ماهیانه از طریق تسهیلات ۵۰/۵۰ تهاتر آپ`
+    : diff === 0
+    ? 'معامله سربه‌سر بدون پرداخت مابه‌التفاوت نقدی'
+    : `${formatToman(diff)} تسویه همزمان در دفترخانه/نمایشگاه`;
+
+  return [
+    `پیش‌نویس تفاهم‌نامه اولیه تهاتر (سامانه تهاتر آپ)`,
+    `--------------------------------------------------`,
+    `کد آگهی مرجع: ${params.listingCode}`,
+    `طرف اول (فروشنده): ${params.sellerName} — مورد معامله: «${params.listingTitle}» (ارزش توافقی: ${params.listingPrice > 0 ? formatToman(params.listingPrice) : 'توافقی'})`,
+    `طرف دوم (پیشنهاددهنده): مورد پیشنهادی «${params.offeredTitle || 'دارایی معرفی‌شده در چت'}» (ارزش برآوردی: ${params.offeredPrice > 0 ? formatToman(params.offeredPrice) : 'توافقی پس از کارشناسی'})`,
+    `نحوه تسویه مابه‌التفاوت (سرانه): ${installmentPart}`,
+    `شروط امنیتی: هرگونه انتقال سند یا پرداخت منوط به رویت حضوری، احراز اصالت مدارک در سامانه ثبت و تایید کارشناس تهاتر آپ بوده و پیش از آن هیچ بیعانه‌ای پرداخت نمی‌شود.`,
+  ].join('\n');
+}
