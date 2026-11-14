@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="bg-3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f4f5"/>
+      <stop offset="100%" stop-color="#e4e4e7"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg-3)"/>
+  <circle cx="345" cy="58" r="78" fill="#c32e2e" opacity="0.06"/>
+  <circle cx="48" cy="335" r="90" fill="#c32e2e" opacity="0.05"/>
+
+  <!-- Top-Center Badge (avoids PostCard top-left photo count and top-right pills) -->
+  <rect x="122" y="16" width="156" height="28" rx="14" fill="#c32e2e"/>
+  <text x="200" y="34" text-anchor="middle" font-size="12" font-weight="bold" fill="#ffffff" font-family="Tahoma, Vazirmatn, sans-serif">تصویر نمایشی (فیک)</text>
+
+  <!-- Center Vector Artwork -->
+  <g transform="translate(0, -14)">
+    
+        <ellipse cx="200" cy="254" rx="145" ry="15" fill="#000" opacity="0.12"/>
+        <path d="M52 216 L66 184 L118 144 L248 144 L298 182 L344 192 C352 200 350 225 335 230 L64 230 C52 228 48 222 52 216 Z" fill="#f8fafc" stroke="#27272a" stroke-width="3.5"/>
+        <path d="M124 152 L240 152 L280 180 L108 180 Z" fill="#e2e8f0" stroke="#27272a" stroke-width="2"/>
+        <circle cx="115" cy="230" r="27" fill="#27272a" stroke="#ffffff" stroke-width="3"/>
+        <circle cx="115" cy="230" r="12" fill="#cbd5e1"/>
+        <circle cx="284" cy="230" r="27" fill="#27272a" stroke="#ffffff" stroke-width="3"/>
+        <circle cx="284" cy="230" r="12" fill="#cbd5e1"/>
+        <rect x="58" y="196" width="16" height="9" rx="2" fill="#c32e2e"/>
+      
+  </g>
+
+  <!-- Caption Bar positioned cleanly above bottom-right PostCard pill -->
+  <rect x="20" y="294" width="360" height="60" rx="10" fill="#ffffff" fill-opacity="0.96" stroke="#e4e4e7"/>
+  <text x="200" y="319" text-anchor="middle" direction="rtl" font-size="14" font-weight="bold" fill="#27272a" font-family="Tahoma, Vazirmatn, sans-serif">تیبا ۱ مدل ۹۹</text>
+  <text x="200" y="341" text-anchor="middle" direction="rtl" font-size="12" fill="#71717a" font-family="Tahoma, Vazirmatn, sans-serif">فنی درجه ۱ · نقد و معاوضه</text>
+</svg>

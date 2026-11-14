@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="bg-17" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f4f5"/>
+      <stop offset="100%" stop-color="#d4d4d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg-17)"/>
+  <circle cx="345" cy="58" r="78" fill="#c32e2e" opacity="0.06"/>
+  <circle cx="48" cy="335" r="90" fill="#c32e2e" opacity="0.05"/>
+
+  <!-- Top-Center Badge (avoids PostCard top-left photo count and top-right pills) -->
+  <rect x="122" y="16" width="156" height="28" rx="14" fill="#c32e2e"/>
+  <text x="200" y="34" text-anchor="middle" font-size="12" font-weight="bold" fill="#ffffff" font-family="Tahoma, Vazirmatn, sans-serif">تصویر نمایشی (فیک)</text>
+
+  <!-- Center Vector Artwork -->
+  <g transform="translate(0, -14)">
+    
+        <ellipse cx="200" cy="255" rx="148" ry="15" fill="#000" opacity="0.12"/>
+        <path d="M50 218 L72 182 L130 144 C150 132 225 132 252 146 L305 182 L346 196 C354 205 352 225 335 230 L64 230 C50 228 46 224 50 218 Z" fill="#3f3f46" stroke="#18181b" stroke-width="3.5"/>
+        <path d="M132 150 L238 150 L282 180 L118 180 Z" fill="#1e293b" opacity="0.82"/>
+        <circle cx="116" cy="230" r="27" fill="#18181b" stroke="#ffffff" stroke-width="3"/>
+        <circle cx="116" cy="230" r="13" fill="#c32e2e"/>
+        <circle cx="286" cy="230" r="27" fill="#18181b" stroke="#ffffff" stroke-width="3"/>
+        <circle cx="286" cy="230" r="13" fill="#c32e2e"/>
+      
+  </g>
+
+  <!-- Caption Bar positioned cleanly above bottom-right PostCard pill -->
+  <rect x="20" y="294" width="360" height="60" rx="10" fill="#ffffff" fill-opacity="0.96" stroke="#e4e4e7"/>
+  <text x="200" y="319" text-anchor="middle" direction="rtl" font-size="14" font-weight="bold" fill="#18181b" font-family="Tahoma, Vazirmatn, sans-serif">آریزو ۵ توربو</text>
+  <text x="200" y="341" text-anchor="middle" direction="rtl" font-size="12" fill="#71717a" font-family="Tahoma, Vazirmatn, sans-serif">سدان مدرن توربوشارژ</text>
+</svg>

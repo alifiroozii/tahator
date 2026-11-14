@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Classic Red Brand Palette (Default Theme) */
+  --brand-primary: #a62626;
+  --brand-action: #c32e2e;
+  --brand-hover: #d83939;
+  --brand-active: #8d3131;
+  --brand-soft: #fae7e7;
+  --brand-ring: rgba(195, 46, 46, 0.14);
+
+  /* Neutral Surfaces */
+  --surface-neutral-weaker: #ffffff;
+  --surface-neutral-weak: #f4f4f5;
+  --surface-neutral-subtle: #fafafa;
+
+  /* Borders & Dividers */
+  --border-neutral-weaker: #e4e4e7;
+  --border-neutral-weak: #c3c3c9;
+
+  /* Text Hierarchy */
+  --content-neutral-stronger: #2a2a30;
+  --content-neutral-default: #71717a;
+  --content-neutral-weak: #a1a1aa;
+  --content-neutral-on-color: #ffffff;
+
+  /* Semantic Colors */
+  --semantic-positive: #1d7c4d;
+  --semantic-positive-soft: #eaf6ef;
+  --semantic-warning: #e78f38;
+  --semantic-warning-soft: #fef6ec;
+  --semantic-negative: #c53434;
+  --semantic-info: #3062d4;
+  --semantic-info-soft: #eef3fc;
+
+  /* Layout Tokens */
+  --navbar-height: 64px;
+  --sidebar-width: 252px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  direction: rtl;
+  text-align: right;
+  overflow-x: hidden;
+  font-family: 'Vazirmatn', IRANSans, Tahoma, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--surface-neutral-weaker);
+  color: var(--content-neutral-stronger);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .kt-button--primary {
+    background-color: var(--brand-action);
+    color: var(--content-neutral-on-color);
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 4px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+    cursor: pointer;
+  }
+
+  .kt-button--primary:hover {
+    background-color: var(--brand-hover);
+  }
+
+  .kt-button--primary:active {
+    background-color: var(--brand-active);
+  }
+
+  .kt-button--outlined {
+    border: 1px solid var(--border-neutral-weak);
+    background-color: var(--surface-neutral-weaker);
+    color: var(--content-neutral-stronger);
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    cursor: pointer;
+  }
+
+  .kt-button--outlined:hover {
+    background-color: var(--surface-neutral-weak);
+  }
+
+  .kt-button--ghost {
+    background-color: transparent;
+    color: var(--content-neutral-default);
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+  }
+
+  .kt-button--ghost:hover {
+    background-color: var(--surface-neutral-weak);
+    color: var(--content-neutral-stronger);
+  }
+
+  .kt-post-card {
+    border: 1px solid var(--border-neutral-weaker);
+    border-radius: 4px;
+    background-color: var(--surface-neutral-weaker);
+    padding: 16px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 170px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
+  }
+
+  .kt-post-card:hover {
+    border-color: var(--border-neutral-weak);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  }
+
+  .kt-base-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-neutral-weaker);
+    font-size: 0.9375rem;
+  }
+
+  .kt-base-row:last-child {
+    border-bottom: none;
+  }
+
+  .kt-input {
+    width: 100%;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-neutral-weaker);
+    border-radius: 4px;
+    background-color: var(--surface-neutral-weaker);
+    color: var(--content-neutral-stronger);
+    font-size: 0.875rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .kt-input:focus {
+    outline: none;
+    border-color: var(--brand-action);
+    box-shadow: 0 0 0 3px var(--brand-ring);
+  }
+
+  .kt-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 40px;
+    height: 22px;
+    border-radius: 9999px;
+    background-color: var(--border-neutral-weaker);
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .kt-switch[data-checked='true'] {
+    background-color: var(--brand-action);
+  }
+
+  .kt-switch-knob {
+    position: absolute;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background-color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease;
+  }
+
+  .kt-switch[data-checked='true'] .kt-switch-knob {
+    transform: translateX(-18px);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
