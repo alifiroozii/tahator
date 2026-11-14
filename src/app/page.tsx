@@ -22,12 +22,14 @@ import {
   Map as MapIcon,
   CheckCircle2,
   Zap,
+  LogIn,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Sidebar, { FilterState } from '@/components/Sidebar';
 import PostCard from '@/components/PostCard';
 import AdDetailModal from '@/components/AdDetailModal';
 import UserDashboardModal from '@/components/UserDashboardModal';
+import AuthOtpModal from '@/components/AuthOtpModal';
 import RolePanelModal from '@/components/RolePanelModal';
 import AiAssistantModal from '@/components/AiAssistantModal';
 import MapFeedView from '@/components/MapFeedView';
@@ -57,16 +59,21 @@ import {
 import {
   AdModerationStatus,
   AdReport,
+  AuthSessionRecord,
+  BarterAsset,
   BarterOffer,
   DEFAULT_TARIFFS,
   DEFAULT_USER_PROFILE,
   DashboardTab,
   INITIAL_AD_REPORTS,
+  INITIAL_AUTH_SESSIONS,
+  INITIAL_BARTER_ASSETS,
   INITIAL_BARTER_OFFERS,
   INITIAL_INSTALLMENT_REQUESTS,
   INITIAL_PLATFORM_USERS,
   INITIAL_SAVED_SEARCHES,
   INITIAL_SUPPORT_TICKETS,
+  INITIAL_USER_NOTIFICATIONS,
   INITIAL_WALLET_TRANSACTIONS,
   InstallmentRequest,
   ListingAnalyticsMeta,
@@ -77,6 +84,7 @@ import {
   SavedSearch,
   SupportTicket,
   TariffConfig,
+  UserNotification,
   UserProfile,
   UserRole,
   WalletTransaction,
@@ -158,7 +166,8 @@ export default function HomePage() {
   const [remainingCount, setRemainingCount] = useState<number>(130);
 
   // User Dashboard & Account State
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [myAdIds, setMyAdIds] = useState<string[]>(['ad-1', 'ad-2']);
@@ -169,11 +178,16 @@ export default function HomePage() {
   const [transactions, setTransactions] = useState<WalletTransaction[]>(
     INITIAL_WALLET_TRANSACTIONS
   );
+  const [barterAssets, setBarterAssets] = useState<BarterAsset[]>(INITIAL_BARTER_ASSETS);
   const [barterOffers, setBarterOffers] = useState<BarterOffer[]>(INITIAL_BARTER_OFFERS);
   const [installmentRequests, setInstallmentRequests] = useState<InstallmentRequest[]>(
     INITIAL_INSTALLMENT_REQUESTS
   );
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(INITIAL_SAVED_SEARCHES);
+  const [notifications, setNotifications] = useState<UserNotification[]>(
+    INITIAL_USER_NOTIFICATIONS
+  );
+  const [sessions, setSessions] = useState<AuthSessionRecord[]>(INITIAL_AUTH_SESSIONS);
 
   // Bookmarks, Notes, Recent & Chat State
   const [bookmarks, setBookmarks] = useState<string[]>(['ad-1', 'ad-2']);
@@ -202,7 +216,7 @@ export default function HomePage() {
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('myAds');
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
   const [showRolePanelModal, setShowRolePanelModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiModalTab, setAiModalTab] = useState<'chat' | 'compare' | 'estimator' | 'chain'>('chat');
@@ -286,6 +300,18 @@ export default function HomePage() {
 
     const savedRecentSearch = readJsonSafe<string[]>('tahator_recent_searches', Array.isArray);
     if (savedRecentSearch) setRecentSearches(savedRecentSearch);
+
+    const savedAuth = readJsonSafe<boolean>('tahator_auth_v2', (v) => typeof v === 'boolean');
+    if (savedAuth === true) setIsLoggedIn(true);
+
+    const savedAssets = readJsonSafe<BarterAsset[]>('tahator_barter_assets_v2', Array.isArray);
+    if (savedAssets) setBarterAssets(savedAssets);
+
+    const savedNotifs = readJsonSafe<UserNotification[]>('tahator_notifications_v2', Array.isArray);
+    if (savedNotifs) setNotifications(savedNotifs);
+
+    const savedSessions = readJsonSafe<AuthSessionRecord[]>('tahator_sessions_v2', Array.isArray);
+    if (savedSessions && savedSessions.length > 0) setSessions(savedSessions);
   }, []);
 
   const handleRecordSearch = (term: string) => {
@@ -864,9 +890,15 @@ export default function HomePage() {
         onOpenPostAd={() => setShowPostAdModal(true)}
         onOpenFacilities={() => setShowFacilitiesModal(true)}
         onOpenInstallmentPlan={() => setShowInstallmentModal(true)}
-        onOpenMyAds={() => {
-          setDashboardTab('myAds');
+        onOpenDashboardTab={(tab) => {
+          setDashboardTab(tab);
           setShowDashboardModal(true);
+        }}
+        onOpenAuthModal={() => setShowAuthModal(true)}
+        onLogout={() => {
+          setIsLoggedIn(false);
+          persistSafe('tahator_auth_v2', false);
+          triggerToast('از حساب کاربری خارج شدید');
         }}
         onOpenAiAssistant={() => {
           setAiModalTab('chat');
@@ -877,11 +909,27 @@ export default function HomePage() {
         bookmarkCount={bookmarks.length}
         isLoggedIn={isLoggedIn}
         userName={userProfile.name}
+        userPhone={userProfile.phone}
         userRole={userRole}
+        walletBalance={walletBalance}
+        unreadNotifications={notifications.filter((n) => !n.read).length}
+        pendingOffersCount={
+          barterOffers.filter((o) => o.direction === 'received' && o.status === 'pending').length
+        }
       />
 
       {/* Mobile & Tablet Quick Category, City, Map, AI & Role Strip */}
       <div className="xl:hidden border-b border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-weaker)] px-3 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        {!isLoggedIn && (
+          <button
+            type="button"
+            onClick={() => setShowAuthModal(true)}
+            className="md:hidden shrink-0 h-[32px] px-3 rounded-full bg-[var(--semantic-positive-soft)] border border-[var(--semantic-positive)]/40 text-[var(--semantic-positive)] text-[12px] font-bold flex items-center gap-1"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>ورود با موبایل</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShowCityModal(true)}
@@ -1404,13 +1452,13 @@ export default function HomePage() {
         <button
           type="button"
           onClick={() => {
-            setDashboardTab('myAds');
+            setDashboardTab('overview');
             setShowDashboardModal(true);
           }}
           className="flex flex-col items-center gap-0.5 text-[11px] text-[var(--content-neutral-default)]"
         >
           <User className="w-5 h-5" />
-          <span>تهاتر من</span>
+          <span>{isLoggedIn ? 'تهاتر من' : 'ورود / من'}</span>
         </button>
       </nav>
 
@@ -1571,19 +1619,10 @@ export default function HomePage() {
           isLoggedIn={isLoggedIn}
           user={userProfile}
           userRole={userRole}
-          onLogin={(name, phone) => {
-            const nextProfile: UserProfile = {
-              ...userProfile,
-              name,
-              phone,
-            };
-            setUserProfile(nextProfile);
-            setIsLoggedIn(true);
-            persistSafe('tahator_profile_v2', nextProfile);
-            triggerToast('ورود به حساب تهاتر آپ با موفقیت انجام شد');
-          }}
+          onOpenAuthModal={() => setShowAuthModal(true)}
           onLogout={() => {
             setIsLoggedIn(false);
+            persistSafe('tahator_auth_v2', false);
             triggerToast('از حساب کاربری خارج شدید');
           }}
           onUpdateProfile={(partial) => {
@@ -1608,12 +1647,38 @@ export default function HomePage() {
             setAiModalTab('compare');
             setShowAiModal(true);
           }}
+          onOpenAiTab={(aiTab) => {
+            setAiModalTab(aiTab);
+            setShowAiModal(true);
+          }}
           onSelectListing={handleSelectListing}
           onLadderAd={handleLadderAd}
           onUrgentAd={handleUrgentAd}
           onRenewAd={handleRenewAd}
           onEditAd={handleEditAd}
           onDeleteAd={handleDeleteUserAd}
+          barterAssets={barterAssets}
+          onAddBarterAsset={(asset) => {
+            const newAsset: BarterAsset = {
+              ...asset,
+              id: `ba-${Date.now()}`,
+              createdAt: 'امروز',
+            };
+            setBarterAssets((prev) => {
+              const next = [newAsset, ...prev];
+              persistSafe('tahator_barter_assets_v2', next);
+              return next;
+            });
+            triggerToast('دارایی جدید به سبد تهاتر شما اضافه شد');
+          }}
+          onDeleteBarterAsset={(id) => {
+            setBarterAssets((prev) => {
+              const next = prev.filter((a) => a.id !== id);
+              persistSafe('tahator_barter_assets_v2', next);
+              return next;
+            });
+            triggerToast('دارایی از سبد تهاتر حذف شد');
+          }}
           barterOffers={barterOffers}
           onRespondBarterOffer={(offerId, status) => {
             setBarterOffers((prev) => {
@@ -1667,7 +1732,128 @@ export default function HomePage() {
               return next;
             });
           }}
+          notifications={notifications}
+          onMarkNotificationsRead={() => {
+            setNotifications((prev) => {
+              const next = prev.map((n) => ({ ...n, read: true }));
+              persistSafe('tahator_notifications_v2', next);
+              return next;
+            });
+            triggerToast('همه اعلان‌ها به‌عنوان خوانده‌شده علامت‌گذاری شد');
+          }}
+          sessions={sessions}
+          onRevokeOtherSessions={() => {
+            setSessions((prev) => {
+              const next = prev.filter((s) => s.isCurrent);
+              persistSafe('tahator_sessions_v2', next);
+              return next;
+            });
+            triggerToast('سایر نشست‌های قدیمی از حساب شما خارج شدند');
+          }}
+          onSubmitSafetyReport={(subject, details) => {
+            const newReport: AdReport = {
+              id: `rep-${Date.now()}`,
+              listingId: 'safety-center',
+              listingTitle: `گزارش امنیتی کاربر: ${subject}`,
+              reason: subject,
+              details,
+              reporterRole: userRole,
+              status: 'open',
+              createdAt: 'لحظاتی پیش',
+            };
+            setAdReports((prev) => [newReport, ...prev]);
+            triggerToast('گزارش امنیتی در کارتابل نظارت ثبت شد');
+          }}
           onClose={() => setShowDashboardModal(false)}
+        />
+      )}
+
+      {/* Mobile OTP Registration / Login Modal */}
+      {showAuthModal && (
+        <AuthOtpModal
+          initialPhone={isLoggedIn ? userProfile.phone : ''}
+          knownPhone={userProfile.phone}
+          knownName={userProfile.name}
+          knownCity={userProfile.city || 'تهران'}
+          onCompleteAuth={({ phone, name, city, role, preferredCategories, isNewUser }) => {
+            const nextProfile: UserProfile = {
+              ...userProfile,
+              name,
+              phone,
+              city,
+              preferredBarterCategories: preferredCategories,
+              lastLoginAt: 'هم‌اکنون',
+              joinedAt: isNewUser ? 'امروز' : userProfile.joinedAt,
+            };
+            setUserProfile(nextProfile);
+            setIsLoggedIn(true);
+            persistSafe('tahator_profile_v2', nextProfile);
+            persistSafe('tahator_auth_v2', true);
+
+            if (isNewUser) {
+              handleSwitchRole(role);
+              const existingIdx = platformUsers.findIndex((u) => u.phone === phone);
+              if (existingIdx === -1) {
+                const newAccount: PlatformUserAccount = {
+                  id: `u-${Date.now()}`,
+                  name,
+                  phone,
+                  role,
+                  verified: false,
+                  status: 'فعال',
+                  adsCount: 0,
+                  joinedAt: 'امروز',
+                };
+                setPlatformUsers((prev) => [newAccount, ...prev]);
+              }
+            }
+
+            const masked = `${toPersianDigits(phone.slice(0, 4))} *** ${toPersianDigits(phone.slice(7))}`;
+            const nextSession: AuthSessionRecord = {
+              id: `sess-${Date.now()}`,
+              deviceLabel: 'ورود تاییدشده با موبایل (هم‌اکنون)',
+              phoneMasked: masked,
+              loginMethod: 'کد تایید پیامکی ۶ رقمی',
+              time: 'نشست فعال کنونی',
+              isCurrent: true,
+            };
+            setSessions((prev) => {
+              const prevDemoted = prev.map((s) => ({
+                ...s,
+                isCurrent: false,
+                time: s.isCurrent ? 'نشست قبلی' : s.time,
+              }));
+              const next = [nextSession, ...prevDemoted].slice(0, 5);
+              persistSafe('tahator_sessions_v2', next);
+              return next;
+            });
+
+            if (isNewUser) {
+              const welcomeNotif: UserNotification = {
+                id: `notif-${Date.now()}`,
+                title: `خوش آمدید ${name}! حساب موبایل شما فعال شد`,
+                description:
+                  'برای دریافت نشان سبز اعتماد و پیشنهادهای ۳ ضلعی دقیق‌تر، کد ملی و دارایی‌های آماده تهاتر خود را تکمیل کنید.',
+                type: 'ai',
+                time: 'هم‌اکنون',
+                read: false,
+              };
+              setNotifications((prev) => {
+                const next = [welcomeNotif, ...prev];
+                persistSafe('tahator_notifications_v2', next);
+                return next;
+              });
+            }
+
+            setDashboardTab('overview');
+            setShowDashboardModal(true);
+            triggerToast(
+              isNewUser
+                ? `عضویت شما با شماره ${toPersianDigits(phone)} با موفقیت تکمیل شد`
+                : `خوش آمدید ${name}! ورود با موفقیت انجام شد`
+            );
+          }}
+          onClose={() => setShowAuthModal(false)}
         />
       )}
 

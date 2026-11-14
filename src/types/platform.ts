@@ -1,7 +1,9 @@
 export type UserRole = 'user' | 'business' | 'moderator' | 'support' | 'admin';
 
 export type DashboardTab =
+  | 'overview'
   | 'profile'
+  | 'barterAssets'
   | 'wallet'
   | 'myAds'
   | 'barterOffers'
@@ -10,6 +12,7 @@ export type DashboardTab =
   | 'notes'
   | 'recent'
   | 'savedSearches'
+  | 'safety'
   | 'settings';
 
 export interface RoleMeta {
@@ -88,16 +91,50 @@ export function getRoleMeta(role: unknown): RoleMeta {
 export interface UserProfile {
   name: string;
   phone: string;
+  city?: string;
   nationalId?: string;
   iban?: string;
   isVerified: boolean;
   joinedAt: string;
+  lastLoginAt?: string;
   storeName?: string;
   storeCity?: string;
   storeBio?: string;
+  preferredBarterCategories?: string[];
+  personalizedFeed?: boolean;
   hidePhoneInChat: boolean;
   allowCallHours: string;
   blockedUsers: string[];
+}
+
+export interface BarterAsset {
+  id: string;
+  title: string;
+  category: string;
+  estimatedValue: number;
+  condition: 'پلمپ / صفر' | 'در حد نو' | 'کارکرده سالم';
+  city: string;
+  swapPreference: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface UserNotification {
+  id: string;
+  title: string;
+  description: string;
+  type: 'offer' | 'ai' | 'security' | 'ad';
+  time: string;
+  read: boolean;
+}
+
+export interface AuthSessionRecord {
+  id: string;
+  deviceLabel: string;
+  phoneMasked: string;
+  loginMethod: string;
+  time: string;
+  isCurrent: boolean;
 }
 
 export interface WalletTransaction {
@@ -208,13 +245,17 @@ export interface TariffConfig {
 export const DEFAULT_USER_PROFILE: UserProfile = {
   name: 'علی فیروزی',
   phone: '09123456789',
+  city: 'تهران',
   nationalId: '',
   iban: '',
   isVerified: false,
   joinedAt: '۱۴۰۵/۰۲/۱۰',
+  lastLoginAt: 'امروز',
   storeName: 'بازرگانی و املاک تهاتر پلاس',
   storeCity: 'تهران',
   storeBio: 'مرکز تخصصی تهاتر ملک، خودرو و کالا با امکان اقساط ۵۰/۵۰ در تهران',
+  preferredBarterCategories: ['املاک', 'وسایل نقلیه', 'کالای دیجیتال'],
+  personalizedFeed: true,
   hidePhoneInChat: true,
   allowCallHours: '۹:۰۰ تا ۲۱:۰۰',
   blockedUsers: ['کاربر شماره ۹۹۰۱ (ارسال اسپم)'],
@@ -438,3 +479,114 @@ export const DEFAULT_TARIFFS: TariffConfig = {
   aiExpertiseFee: 0,
   installmentBaseRate: 22,
 };
+
+export const INITIAL_BARTER_ASSETS: BarterAsset[] = [
+  {
+    id: 'ba-1',
+    title: 'پژو ۲۰۷ پانوراما دنده‌ای مدل ۱۴۰۲ بی‌رنگ',
+    category: 'وسایل نقلیه',
+    estimatedValue: 920_000_000,
+    condition: 'در حد نو',
+    city: 'تهران',
+    swapPreference: 'معاوضه با آپارتمان کوچک در غرب تهران یا خودرو شاسی‌بلند + اقساط ۵۰/۵۰',
+    note: 'کارکرد ۲۸ هزار کیلومتر، بیمه ۱۱ ماه، آماده کارشناسی',
+    createdAt: '۱۴۰۵/۰۸/۱۸',
+  },
+  {
+    id: 'ba-2',
+    title: 'مک‌بوک پرو ۱۴ اینچ M3 Pro حافظه ۵۱۲ گیگ',
+    category: 'کالای دیجیتال',
+    estimatedValue: 118_000_000,
+    condition: 'در حد نو',
+    city: 'تهران',
+    swapPreference: 'معاوضه با آیفون ۱۶ پرو مکس یا تجهیزات اداری',
+    note: 'سایکل باتری ۱۵، بدون خط و خش همراه با جعبه اصلی',
+    createdAt: '۱۴۰۵/۰۸/۲۱',
+  },
+];
+
+export const INITIAL_USER_NOTIFICATIONS: UserNotification[] = [
+  {
+    id: 'notif-1',
+    title: 'تطابق ۹۳٪ هوش مصنوعی برای پیشنهاد معاوضه جدید',
+    description: 'حسین رضایی برای آگهی آیفون ۱۶ پرو مکس شما پیشنهاد معاوضه با مک‌بوک پرو + ۲۰ میلیون نقد ثبت کرد.',
+    type: 'offer',
+    time: '۲ ساعت پیش',
+    read: false,
+  },
+  {
+    id: 'notif-2',
+    title: 'کشف زنجیره تهاتر ۳ ضلعی متناسب با سبد دارایی شما',
+    description: 'موتور آفلاین یک حلقه تهاتر جدید بین خودروی سبد شما و آپارتمان ۵۰ متری ستارخان پیدا کرد.',
+    type: 'ai',
+    time: 'دیروز',
+    read: false,
+  },
+  {
+    id: 'notif-3',
+    title: 'یادآور تکمیل احراز هویت و فعال‌سازی نشان اعتماد سبز',
+    description: 'برای افزایش اعتماد طرف‌های معاوضه و دریافت سقف تسهیلات ۵۰/۵۰، کد ملی و شبا را در پروفایل ثبت کنید.',
+    type: 'security',
+    time: '۳ روز پیش',
+    read: true,
+  },
+];
+
+export const INITIAL_AUTH_SESSIONS: AuthSessionRecord[] = [
+  {
+    id: 'sess-current',
+    deviceLabel: 'مرورگر وب فعلی (دسکتاپ / موبایل)',
+    phoneMasked: '۰۹۱۲ *** ۶۷۸۹',
+    loginMethod: 'ورود با کد تایید پیامکی',
+    time: 'نشست فعال کنونی',
+    isCurrent: true,
+  },
+];
+
+export interface ProfileCompletenessCheck {
+  id: string;
+  label: string;
+  done: boolean;
+  targetTab: DashboardTab;
+}
+
+export function computeProfileMetrics(
+  profile: UserProfile,
+  isLoggedIn: boolean,
+  adsCount: number,
+  assetsCount: number
+): {
+  completionPercent: number;
+  trustScore: number;
+  checks: ProfileCompletenessCheck[];
+} {
+  const hasPhone = isLoggedIn && /^09\d{9}$/.test(profile.phone || '');
+  const hasName = Boolean(profile.name && profile.name.trim().length >= 3);
+  const hasKyc = Boolean(profile.isVerified || (profile.nationalId && profile.nationalId.trim().length >= 10));
+  const hasIban = Boolean(profile.iban && profile.iban.trim().length >= 10);
+  const hasAssetOrAd = assetsCount > 0 || adsCount > 0;
+  const hasCity = Boolean(profile.city && profile.city.trim().length > 0);
+
+  const checks: ProfileCompletenessCheck[] = [
+    { id: 'phone', label: 'ورود و تایید شماره موبایل', done: hasPhone, targetTab: 'profile' },
+    { id: 'name', label: 'تکمیل نام و نام خانوادگی', done: hasName, targetTab: 'profile' },
+    { id: 'city', label: 'تعیین شهر اصلی فعالیت', done: hasCity, targetTab: 'profile' },
+    { id: 'kyc', label: 'احراز هویت (کد ملی و نشان سبز)', done: hasKyc, targetTab: 'profile' },
+    { id: 'iban', label: 'ثبت شماره شبا برای تسویه امن', done: hasIban, targetTab: 'profile' },
+    { id: 'inventory', label: 'ثبت دارایی در سبد تهاتر یا آگهی', done: hasAssetOrAd, targetTab: 'barterAssets' },
+  ];
+
+  const doneCount = checks.filter((c) => c.done).length;
+  const completionPercent = Math.round((doneCount / checks.length) * 100);
+  const trustScore = Math.min(
+    99,
+    (hasPhone ? 35 : 15) +
+      (hasName ? 15 : 0) +
+      (hasKyc ? 25 : 0) +
+      (hasIban ? 10 : 0) +
+      (hasAssetOrAd ? 10 : 0) +
+      (hasCity ? 4 : 0)
+  );
+
+  return { completionPercent, trustScore, checks };
+}

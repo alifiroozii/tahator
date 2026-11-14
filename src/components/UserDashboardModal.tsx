@@ -30,10 +30,23 @@ import {
   Search,
   Check,
   AlertCircle,
+  LayoutDashboard,
+  Package,
+  ShieldAlert,
+  LogIn,
+  LogOut,
+  Copy,
+  BellRing,
+  Smartphone,
+  Award,
+  ArrowUpRight,
 } from 'lucide-react';
-import { Listing, formatToman, toPersianDigits } from '@/data/mockData';
+import { CATEGORIES, CITIES, Listing, formatToman, toPersianDigits } from '@/data/mockData';
+import { generateBarterAgreementDraft } from '@/lib/offlineAi';
 import {
   AdModerationStatus,
+  AuthSessionRecord,
+  BarterAsset,
   BarterOffer,
   DashboardTab,
   InstallmentRequest,
@@ -41,9 +54,11 @@ import {
   ROLE_META,
   getRoleMeta,
   SavedSearch,
+  UserNotification,
   UserProfile,
   UserRole,
   WalletTransaction,
+  computeProfileMetrics,
 } from '@/types/platform';
 
 interface UserDashboardModalProps {
@@ -51,7 +66,7 @@ interface UserDashboardModalProps {
   isLoggedIn: boolean;
   user: UserProfile;
   userRole: UserRole;
-  onLogin: (name: string, phone: string) => void;
+  onOpenAuthModal: () => void;
   onLogout: () => void;
   onUpdateProfile: (partial: Partial<UserProfile>) => void;
   onSwitchRole: (role: UserRole) => void;
@@ -65,6 +80,7 @@ interface UserDashboardModalProps {
   onOpenPostAd: () => void;
   onOpenFacilities: () => void;
   onOpenCompareWith: (listing: Listing) => void;
+  onOpenAiTab?: (tab: 'chat' | 'compare' | 'estimator' | 'chain') => void;
   onSelectListing: (listing: Listing) => void;
   onLadderAd: (id: string) => void;
   onUrgentAd: (id: string) => void;
@@ -74,6 +90,9 @@ interface UserDashboardModalProps {
     updates: { title: string; price: number; hasExchange: boolean; exchangeWith: string; description: string }
   ) => void;
   onDeleteAd: (id: string, reason: string) => void;
+  barterAssets: BarterAsset[];
+  onAddBarterAsset: (asset: Omit<BarterAsset, 'id' | 'createdAt'>) => void;
+  onDeleteBarterAsset: (id: string) => void;
   barterOffers: BarterOffer[];
   onRespondBarterOffer: (offerId: string, status: 'accepted' | 'rejected') => void;
   onOpenChatFromOffer: (offer: BarterOffer) => void;
@@ -88,24 +107,33 @@ interface UserDashboardModalProps {
   onToggleSavedSearchNotify: (id: string) => void;
   onApplySavedSearch: (search: SavedSearch) => void;
   onDeleteSavedSearch: (id: string) => void;
+  notifications: UserNotification[];
+  onMarkNotificationsRead: () => void;
+  sessions: AuthSessionRecord[];
+  onRevokeOtherSessions: () => void;
+  onSubmitSafetyReport: (subject: string, details: string) => void;
   onClose: () => void;
 }
 
 const NAV_ITEMS: {
   id: DashboardTab;
   label: string;
+  group: string;
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
-  { id: 'profile', label: 'حساب کاربری و احراز هویت', icon: User },
-  { id: 'wallet', label: 'کیف پول و پرداخت‌ها', icon: Wallet },
-  { id: 'myAds', label: 'آگهی‌های من', icon: FileText },
-  { id: 'barterOffers', label: 'پیشنهادهای معاوضه', icon: ArrowLeftRight },
-  { id: 'installments', label: 'پرونده‌های اقساط و تسهیلات', icon: Percent },
-  { id: 'bookmarks', label: 'نشان‌ها', icon: Bookmark },
-  { id: 'notes', label: 'یادداشت‌های من', icon: StickyNote },
-  { id: 'recent', label: 'بازدیدهای اخیر', icon: Clock },
-  { id: 'savedSearches', label: 'جستجوهای ذخیره‌شده', icon: Bell },
-  { id: 'settings', label: 'فروشگاه من و تنظیمات امنیت', icon: Settings },
+  { id: 'overview', label: 'نمای کلی پروفایل', group: 'حساب و مدیریت تهاتر', icon: LayoutDashboard },
+  { id: 'profile', label: 'حساب کاربری و احراز هویت', group: 'حساب و مدیریت تهاتر', icon: User },
+  { id: 'barterAssets', label: 'سبد دارایی‌های تهاتر من', group: 'حساب و مدیریت تهاتر', icon: Package },
+  { id: 'myAds', label: 'آگهی‌های من', group: 'حساب و مدیریت تهاتر', icon: FileText },
+  { id: 'barterOffers', label: 'معاوضه‌ها و تفاهم‌نامه‌ها', group: 'حساب و مدیریت تهاتر', icon: ArrowLeftRight },
+  { id: 'wallet', label: 'کیف پول و پرداخت‌ها', group: 'مالی و تسهیلات', icon: Wallet },
+  { id: 'installments', label: 'پرونده‌های اقساط ۵۰/۵۰', group: 'مالی و تسهیلات', icon: Percent },
+  { id: 'bookmarks', label: 'نشان‌ها', group: 'فعالیت‌ها و امنیت', icon: Bookmark },
+  { id: 'notes', label: 'یادداشت‌های من', group: 'فعالیت‌ها و امنیت', icon: StickyNote },
+  { id: 'recent', label: 'بازدیدهای اخیر', group: 'فعالیت‌ها و امنیت', icon: Clock },
+  { id: 'savedSearches', label: 'جستجوهای ذخیره‌شده', group: 'فعالیت‌ها و امنیت', icon: Bell },
+  { id: 'safety', label: 'مقابله با مزاحمت و امنیت', group: 'فعالیت‌ها و امنیت', icon: ShieldAlert },
+  { id: 'settings', label: 'فروشگاه من و تنظیمات', group: 'فعالیت‌ها و امنیت', icon: Settings },
 ];
 
 const STATUS_LABELS: Record<AdModerationStatus, { text: string; cls: string }> = {
@@ -128,11 +156,11 @@ const STATUS_LABELS: Record<AdModerationStatus, { text: string; cls: string }> =
 };
 
 export default function UserDashboardModal({
-  initialTab = 'myAds',
+  initialTab = 'overview',
   isLoggedIn,
   user,
   userRole,
-  onLogin,
+  onOpenAuthModal,
   onLogout,
   onUpdateProfile,
   onSwitchRole,
@@ -146,12 +174,16 @@ export default function UserDashboardModal({
   onOpenPostAd,
   onOpenFacilities,
   onOpenCompareWith,
+  onOpenAiTab,
   onSelectListing,
   onLadderAd,
   onUrgentAd,
   onRenewAd,
   onEditAd,
   onDeleteAd,
+  barterAssets,
+  onAddBarterAsset,
+  onDeleteBarterAsset,
   barterOffers,
   onRespondBarterOffer,
   onOpenChatFromOffer,
@@ -166,17 +198,39 @@ export default function UserDashboardModal({
   onToggleSavedSearchNotify,
   onApplySavedSearch,
   onDeleteSavedSearch,
+  notifications,
+  onMarkNotificationsRead,
+  sessions,
+  onRevokeOtherSessions,
+  onSubmitSafetyReport,
   onClose,
 }: UserDashboardModalProps) {
   const [tab, setTab] = useState<DashboardTab>(initialTab);
-  const [loginName, setLoginName] = useState('');
-  const [loginPhone, setLoginPhone] = useState('');
 
   // Profile form state
   const [profName, setProfName] = useState(user.name);
+  const [profCity, setProfCity] = useState(user.city || 'تهران');
   const [profNationalId, setProfNationalId] = useState(user.nationalId || '');
   const [profIban, setProfIban] = useState(user.iban || '');
   const [profileSavedMsg, setProfileSavedMsg] = useState('');
+
+  // Barter assets sub-states
+  const [assetTitle, setAssetTitle] = useState('');
+  const [assetCategory, setAssetCategory] = useState('وسایل نقلیه');
+  const [assetValue, setAssetValue] = useState('');
+  const [assetCondition, setAssetCondition] = useState<BarterAsset['condition']>('در حد نو');
+  const [assetCity, setAssetCity] = useState(user.city || 'تهران');
+  const [assetPref, setAssetPref] = useState('');
+  const [matchedAssetId, setMatchedAssetId] = useState<string | null>(null);
+
+  // Agreement draft preview modal inside Barter Offers
+  const [previewOfferAgreement, setPreviewOfferAgreement] = useState<BarterOffer | null>(null);
+  const [agreementCopied, setAgreementCopied] = useState(false);
+
+  // Safety report sub-states
+  const [safetySubject, setSafetySubject] = useState('درخواست بیعانه پیش از رویت حضوری');
+  const [safetyDetails, setSafetyDetails] = useState('');
+  const [safetySubmittedMsg, setSafetySubmittedMsg] = useState('');
 
   // Wallet custom top-up
   const [customCharge, setCustomCharge] = useState('200000');
@@ -213,6 +267,7 @@ export default function UserDashboardModal({
 
   useEffect(() => {
     setProfName(user.name);
+    setProfCity(user.city || 'تهران');
     setProfNationalId(user.nationalId || '');
     setProfIban(user.iban || '');
     setStoreName(user.storeName || '');
@@ -224,6 +279,13 @@ export default function UserDashboardModal({
   const pendingOffersCount = barterOffers.filter(
     (o) => o.direction === 'received' && o.status === 'pending'
   ).length;
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+  const profileMetrics = computeProfileMetrics(user, isLoggedIn, myAds.length, barterAssets.length);
+  const totalAssetValue = barterAssets.reduce((sum, a) => sum + (a.estimatedValue || 0), 0);
+  const totalAdViews = myAds.reduce(
+    (sum, ad) => sum + (listingMeta[ad.id]?.views || 120),
+    0
+  );
 
   const filteredMyAds = myAds.filter((ad) => {
     if (adStatusFilter === 'all') return true;
@@ -303,36 +365,28 @@ export default function UserDashboardModal({
 
         {/* Auth Bar if not logged in */}
         {!isLoggedIn && (
-          <div className="px-4 sm:px-6 py-3 bg-[var(--brand-soft)]/70 border-b border-[var(--border-neutral-weaker)]">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!loginPhone.trim()) return;
-                onLogin(loginName.trim() || 'کاربر تهاتر آپ', loginPhone.trim());
-              }}
-              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+          <div className="px-4 sm:px-6 py-3 bg-[var(--brand-soft)]/80 border-b border-[var(--border-neutral-weaker)] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white text-[var(--brand-primary)] flex items-center justify-center shrink-0 shadow-sm">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-[13px] font-bold text-[var(--brand-primary)]">
+                  برای مدیریت کامل پروفایل، آگهی‌ها و تهاترهای خود با شماره موبایل وارد شوید
+                </div>
+                <div className="text-[11px] text-[var(--content-neutral-default)]">
+                  بدون نیاز به پنل پیامکی: کد تایید ۶ رقمی روی صفحه نمایش داده می‌شود و با یک کلیک وارد می‌شوید.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenAuthModal}
+              className="kt-button--primary !h-[36px] !px-4 text-[12px] font-bold shrink-0"
             >
-              <span className="text-[12px] font-bold text-[var(--brand-primary)] shrink-0">
-                ورود یا ثبت‌نام سریع در تهاتر آپ:
-              </span>
-              <input
-                type="text"
-                value={loginName}
-                onChange={(e) => setLoginName(e.target.value)}
-                placeholder="نام و نام خانوادگی"
-                className="kt-input !h-[34px] text-[12px] sm:max-w-[180px]"
-              />
-              <input
-                type="tel"
-                value={loginPhone}
-                onChange={(e) => setLoginPhone(e.target.value)}
-                placeholder="شماره موبایل (0912...)"
-                className="kt-input !h-[34px] text-[12px] sm:max-w-[180px] text-left dir-ltr"
-              />
-              <button type="submit" className="kt-button--primary !h-[34px] !px-4 text-[12px]">
-                ورود / ثبت‌نام
-              </button>
-            </form>
+              <LogIn className="w-3.5 h-3.5" />
+              <span>ورود / عضویت با موبایل</span>
+            </button>
           </div>
         )}
 
@@ -364,10 +418,13 @@ export default function UserDashboardModal({
           {/* Desktop Right Sidebar (RTL Start - 3 cols) */}
           <aside className="hidden lg:flex lg:col-span-3 flex-col border-l border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] p-3 overflow-y-auto">
             <div className="space-y-1 flex-1">
-              {NAV_ITEMS.map((item) => {
+              {NAV_ITEMS.map((item, idx) => {
                 const Icon = item.icon;
                 const active = tab === item.id;
+                const showGroupHeader = idx === 0 || NAV_ITEMS[idx - 1].group !== item.group;
                 let countBadge: number | null = null;
+                if (item.id === 'overview' && unreadNotifCount > 0) countBadge = unreadNotifCount;
+                if (item.id === 'barterAssets' && barterAssets.length > 0) countBadge = barterAssets.length;
                 if (item.id === 'myAds') countBadge = myAds.length;
                 if (item.id === 'barterOffers' && pendingOffersCount > 0) countBadge = pendingOffersCount;
                 if (item.id === 'bookmarks') countBadge = bookmarkedAds.length;
@@ -375,32 +432,38 @@ export default function UserDashboardModal({
                 if (item.id === 'savedSearches') countBadge = savedSearches.length;
 
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setTab(item.id)}
-                    className={`w-full px-3 py-2.5 rounded-[6px] text-[13px] flex items-center justify-between transition-colors ${
-                      active
-                        ? 'bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold'
-                        : 'text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2.5 truncate">
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    {countBadge !== null && (
-                      <span
-                        className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] flex items-center justify-center ${
-                          active
-                            ? 'bg-[var(--brand-action)] text-white'
-                            : 'bg-[var(--surface-neutral-weaker)] border border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
-                        }`}
-                      >
-                        {toPersianDigits(countBadge)}
-                      </span>
+                  <React.Fragment key={item.id}>
+                    {showGroupHeader && (
+                      <div className="px-2.5 pt-2.5 pb-1 text-[10px] font-bold text-[var(--content-neutral-default)]">
+                        {item.group}
+                      </div>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setTab(item.id)}
+                      className={`w-full px-3 py-2 rounded-[6px] text-[12.5px] flex items-center justify-between transition-colors ${
+                        active
+                          ? 'bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold'
+                          : 'text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5 truncate">
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      {countBadge !== null && (
+                        <span
+                          className={`min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] flex items-center justify-center ${
+                            active
+                              ? 'bg-[var(--brand-action)] text-white'
+                              : 'bg-[var(--surface-neutral-weaker)] border border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                          }`}
+                        >
+                          {toPersianDigits(countBadge)}
+                        </span>
+                      )}
+                    </button>
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -437,6 +500,210 @@ export default function UserDashboardModal({
 
           {/* Main Left Panel (9 cols) */}
           <div className="lg:col-span-9 p-4 sm:p-6 overflow-y-auto space-y-5 bg-[var(--surface-neutral-weaker)]">
+            {/* TAB 0: OVERVIEW & MEMBER TRUST SUMMARY */}
+            {tab === 'overview' && (
+              <div className="space-y-5">
+                {/* Identity & Trust Score Hero Card */}
+                <div className="p-4 sm:p-5 rounded-[10px] border border-[var(--border-neutral-weaker)] bg-gradient-to-l from-[var(--brand-soft)]/50 to-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-14 h-14 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-[20px] font-extrabold shrink-0 shadow-sm">
+                      {isLoggedIn ? (user.name?.trim().charAt(0) || 'ت') : '؟'}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-[16px] sm:text-[18px] font-bold text-[var(--content-neutral-stronger)] truncate">
+                          {isLoggedIn ? user.name : 'کاربر مهمان تهاتر آپ'}
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
+                          {getRoleMeta(userRole).shortTitle}
+                        </span>
+                        {user.isVerified ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[11px] font-bold">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>احراز هویت تاییدشده</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setTab('profile')}
+                            className="px-2 py-0.5 rounded-full bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[11px] font-bold hover:underline"
+                          >
+                            نیازمند تکمیل احراز هویت
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-[12px] text-[var(--content-neutral-default)] mt-1 flex flex-wrap items-center gap-3">
+                        <span className="dir-ltr">
+                          {isLoggedIn ? toPersianDigits(user.phone) : 'شماره موبایل ثبت نشده'}
+                        </span>
+                        <span>· شهر: {user.city || 'تهران'}</span>
+                        <span>· عضویت: {user.joinedAt}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0 bg-white px-4 py-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)]">
+                    <Award className="w-6 h-6 text-[var(--semantic-positive)] shrink-0" />
+                    <div>
+                      <div className="text-[11px] text-[var(--content-neutral-default)]">
+                        امتیاز اعتماد تهاتر
+                      </div>
+                      <div className="text-[16px] font-extrabold text-[var(--semantic-positive)]">
+                        {toPersianDigits(profileMetrics.trustScore)} از ۱۰۰
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profile Completeness Checklist */}
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                      وضعیت تکمیل پروفایل برای معاملات امن و اقساط ۵۰/۵۰ ({toPersianDigits(profileMetrics.completionPercent)}٪)
+                    </span>
+                    <div className="w-full sm:w-48 h-2 rounded-full bg-[var(--surface-neutral-weak)] overflow-hidden">
+                      <div
+                        className="h-full bg-[var(--semantic-positive)] transition-all"
+                        style={{ width: `${profileMetrics.completionPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {profileMetrics.checks.map((chk) => (
+                      <button
+                        key={chk.id}
+                        type="button"
+                        onClick={() => {
+                          if (chk.id === 'phone' && !isLoggedIn) {
+                            onOpenAuthModal();
+                          } else {
+                            setTab(chk.targetTab);
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-[6px] border text-[12px] flex items-center justify-between gap-2 text-right transition-colors ${
+                          chk.done
+                            ? 'bg-[var(--semantic-positive-soft)]/50 border-[var(--semantic-positive)]/30 text-[var(--semantic-positive)]'
+                            : 'bg-[var(--surface-neutral-subtle)] border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[var(--content-neutral-stronger)]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 truncate">
+                          {chk.done ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5 text-[var(--brand-action)] shrink-0" />
+                          )}
+                          <span className="truncate">{chk.label}</span>
+                        </span>
+                        {!chk.done && <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4 Quick KPI Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setTab('myAds')}
+                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                  >
+                    <div className="text-[11px] text-[var(--content-neutral-default)]">آگهی‌های فعال من</div>
+                    <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
+                      {toPersianDigits(myAds.length)} آگهی
+                    </div>
+                    <div className="text-[11px] text-[var(--brand-primary)] mt-1">
+                      {toPersianDigits(totalAdViews)} بازدید ۷ روز اخیر
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTab('barterAssets')}
+                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                  >
+                    <div className="text-[11px] text-[var(--content-neutral-default)]">سبد دارایی‌های تهاتر</div>
+                    <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
+                      {toPersianDigits(barterAssets.length)} دارایی
+                    </div>
+                    <div className="text-[11px] text-[var(--semantic-positive)] mt-1 truncate">
+                      ارزش: {formatToman(totalAssetValue)}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTab('barterOffers')}
+                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                  >
+                    <div className="text-[11px] text-[var(--content-neutral-default)]">معاوضه و اقساط ۵۰/۵۰</div>
+                    <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
+                      {toPersianDigits(pendingOffersCount)} در انتظار
+                    </div>
+                    <div className="text-[11px] text-[var(--content-neutral-default)] mt-1">
+                      {toPersianDigits(installmentRequests.length)} پرونده تسهیلات فعال
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTab('wallet')}
+                    className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                  >
+                    <div className="text-[11px] text-[var(--content-neutral-default)]">اعتبار کیف پول</div>
+                    <div className="text-[16px] sm:text-[18px] font-extrabold text-[var(--brand-primary)] mt-1 truncate">
+                      {formatToman(walletBalance)}
+                    </div>
+                    <div className="text-[11px] text-[var(--semantic-info)] mt-1">شارژ آنی شاپرک +</div>
+                  </button>
+                </div>
+
+                {/* Notifications & Quick Actions */}
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                      <BellRing className="w-4 h-4 text-[var(--brand-action)]" />
+                      <span>اعلان‌ها و رویدادهای هوشمند پروفایل ({toPersianDigits(unreadNotifCount)} جدید)</span>
+                    </div>
+                    {unreadNotifCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={onMarkNotificationsRead}
+                        className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline"
+                      >
+                        همه خوانده شد
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className={`p-3 rounded-[6px] border text-[12px] flex items-start justify-between gap-3 ${
+                          n.read
+                            ? 'bg-[var(--surface-neutral-subtle)] border-[var(--border-neutral-weaker)]'
+                            : 'bg-[var(--brand-soft)]/50 border-[var(--brand-action)]/30'
+                        }`}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-[var(--content-neutral-stronger)] flex items-center gap-1.5">
+                            {!n.read && <span className="w-2 h-2 rounded-full bg-[var(--brand-action)] shrink-0" />}
+                            <span>{n.title}</span>
+                          </div>
+                          <p className="text-[11px] text-[var(--content-neutral-default)] leading-5">
+                            {n.description}
+                          </p>
+                        </div>
+                        <span className="text-[10px] text-[var(--content-neutral-default)] shrink-0">
+                          {n.time}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* TAB 1: PROFILE & VERIFICATION */}
             {tab === 'profile' && (
               <div className="space-y-5">
@@ -467,6 +734,7 @@ export default function UserDashboardModal({
                     const verified = profNationalId.trim().length >= 10;
                     onUpdateProfile({
                       name: profName.trim() || user.name,
+                      city: profCity,
                       nationalId: profNationalId.trim(),
                       iban: profIban.trim(),
                       isVerified: verified,
@@ -490,13 +758,36 @@ export default function UserDashboardModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-[13px] font-medium mb-1">شماره موبایل تاییدشده</label>
-                    <input
-                      type="text"
-                      value={toPersianDigits(user.phone)}
-                      disabled
-                      className="kt-input opacity-75 text-left dir-ltr cursor-not-allowed"
-                    />
+                    <label className="block text-[13px] font-medium mb-1">شماره موبایل حساب</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={isLoggedIn ? toPersianDigits(user.phone) : 'وارد نشده'}
+                        disabled
+                        className="kt-input opacity-80 text-left dir-ltr cursor-not-allowed flex-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={onOpenAuthModal}
+                        className="kt-button--outlined !px-3 text-[12px] shrink-0"
+                      >
+                        تغییر / ورود با کد
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium mb-1">شهر اصلی فعالیت</label>
+                    <select
+                      value={profCity}
+                      onChange={(e) => setProfCity(e.target.value)}
+                      className="kt-input bg-white"
+                    >
+                      {CITIES.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name} ({c.province})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium mb-1">
@@ -584,6 +875,264 @@ export default function UserDashboardModal({
                       </button>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: BARTER ASSETS INVENTORY & AI MATCHING */}
+            {tab === 'barterAssets' && (
+              <div className="space-y-5">
+                <div className="pb-3 border-b border-[var(--border-neutral-weaker)]">
+                  <h3 className="text-[17px] font-bold text-[var(--content-neutral-stronger)]">
+                    سبد دارایی‌های آماده تهاتر من
+                  </h3>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
+                    دارایی‌ها و کالاهایی که قصد معاوضه آن‌ها را دارید (حتی بدون انتشار آگهی عمومی) ثبت کنید تا هوش مصنوعی بهترین تطابق‌های ۲ طرفه و ۳ ضلعی را پیشنهاد دهد.
+                  </p>
+                </div>
+
+                {/* Preferred Target Categories */}
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-2.5">
+                  <div className="text-[12px] font-bold text-[var(--content-neutral-stronger)]">
+                    دسته‌های مورد علاقه من برای دریافت در تهاتر:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {CATEGORIES.filter((c) => c.showInSidebar).map((cat) => {
+                      const prefs = user.preferredBarterCategories || [];
+                      const active = prefs.includes(cat.name);
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            const next = active
+                              ? prefs.filter((x) => x !== cat.name)
+                              : [...prefs, cat.name];
+                            onUpdateProfile({ preferredBarterCategories: next });
+                          }}
+                          className={`px-3 py-1 rounded-full text-[12px] border transition-colors ${
+                            active
+                              ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
+                              : 'bg-white border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                          }`}
+                        >
+                          {cat.emoji} {cat.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Add New Barter Asset Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const cleanTitle = assetTitle.trim();
+                    const val = Number(assetValue) || 0;
+                    if (!cleanTitle || val <= 0) return;
+                    onAddBarterAsset({
+                      title: cleanTitle,
+                      category: assetCategory,
+                      estimatedValue: val,
+                      condition: assetCondition,
+                      city: assetCity,
+                      swapPreference: assetPref.trim() || 'معاوضه با ملک، خودرو یا کالای هم‌ارزش',
+                    });
+                    setAssetTitle('');
+                    setAssetValue('');
+                    setAssetPref('');
+                  }}
+                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3"
+                >
+                  <div className="text-[13px] font-bold text-[var(--brand-primary)] flex items-center gap-1.5">
+                    <Plus className="w-4 h-4" />
+                    <span>افزودن دارایی جدید به سبد تهاتر</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <input
+                      type="text"
+                      value={assetTitle}
+                      onChange={(e) => setAssetTitle(e.target.value)}
+                      placeholder="عنوان کالا یا ملک (مثلاً: سکه امامی / پژو پارس)"
+                      className="kt-input !h-[36px] text-[12px] sm:col-span-2"
+                    />
+                    <input
+                      type="number"
+                      min={100000}
+                      value={assetValue}
+                      onChange={(e) => setAssetValue(e.target.value)}
+                      placeholder="ارزش تخمینی (تومان)"
+                      className="kt-input !h-[36px] text-[12px] text-left dir-ltr"
+                    />
+                    <select
+                      value={assetCategory}
+                      onChange={(e) => setAssetCategory(e.target.value)}
+                      className="kt-input !h-[36px] text-[12px] bg-white"
+                    >
+                      {CATEGORIES.filter((c) => c.showInSidebar).map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={assetCondition}
+                      onChange={(e) => setAssetCondition(e.target.value as BarterAsset['condition'])}
+                      className="kt-input !h-[36px] text-[12px] bg-white"
+                    >
+                      <option value="پلمپ / صفر">پلمپ / صفر</option>
+                      <option value="در حد نو">در حد نو</option>
+                      <option value="کارکرده سالم">کارکرده سالم</option>
+                    </select>
+                    <select
+                      value={assetCity}
+                      onChange={(e) => setAssetCity(e.target.value)}
+                      className="kt-input !h-[36px] text-[12px] bg-white"
+                    >
+                      {CITIES.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={assetPref}
+                      onChange={(e) => setAssetPref(e.target.value)}
+                      placeholder="ترجیح شما برای معاوضه (مثلاً: آپارتمان نقلی یا خودرو اتومات)"
+                      className="kt-input !h-[36px] text-[12px] flex-1"
+                    />
+                    <button type="submit" className="kt-button--primary !h-[36px] !px-5 text-[12px]">
+                      ثبت در سبد دارایی
+                    </button>
+                  </div>
+                </form>
+
+                {/* Registered Barter Assets List */}
+                <div className="space-y-3">
+                  {barterAssets.length === 0 ? (
+                    <p className="py-8 text-center text-[13px] text-[var(--content-neutral-default)]">
+                      هنوز دارایی‌ای در سبد تهاتر خود ثبت نکرده‌اید.
+                    </p>
+                  ) : (
+                    barterAssets.map((asset) => {
+                      const isExpanded = matchedAssetId === asset.id;
+                      const topMatches = isExpanded
+                        ? allListings
+                            .filter((l) => l.hasExchange && l.price > 0)
+                            .map((l) => {
+                              const maxP = Math.max(l.price, asset.estimatedValue);
+                              const diff = Math.abs(l.price - asset.estimatedValue);
+                              const score = Math.max(
+                                58,
+                                Math.min(98, Math.round(98 - (diff / maxP) * 45))
+                              );
+                              return { listing: l, diff, score };
+                            })
+                            .sort((a, b) => b.score - a.score)
+                            .slice(0, 3)
+                        : [];
+
+                      return (
+                        <div
+                          key={asset.id}
+                          className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="px-2 py-0.5 rounded bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
+                                  {asset.category}
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-stronger)] text-[11px]">
+                                  {asset.condition}
+                                </span>
+                                <span className="text-[11px] text-[var(--content-neutral-default)]">
+                                  {asset.city} · {asset.createdAt}
+                                </span>
+                              </div>
+                              <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)] mt-1.5">
+                                {asset.title}
+                              </div>
+                              <div className="text-[12px] text-[var(--semantic-positive)] font-extrabold mt-0.5">
+                                ارزش کارشناسی: {formatToman(asset.estimatedValue)}
+                              </div>
+                              <div className="text-[12px] text-[var(--content-neutral-default)] mt-1">
+                                ترجیح تهاتر: {asset.swapPreference}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setMatchedAssetId(isExpanded ? null : asset.id)}
+                                className="kt-button--outlined !h-[32px] !px-3 text-[11px] text-[var(--brand-primary)]"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>{isExpanded ? 'بستن پیشنهادها' : 'تطابق هوشمند'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteBarterAsset(asset.id)}
+                                className="p-1.5 rounded border border-[var(--border-neutral-weaker)] text-[var(--semantic-negative)] hover:bg-[var(--brand-soft)]"
+                                title="حذف دارایی"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="pt-3 mt-2 border-t border-[var(--border-neutral-weaker)] space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[12px] font-bold text-[var(--content-neutral-stronger)]">
+                                  بهترین گزینه‌های تهاتر در بازار تهاتر آپ برای این دارایی:
+                                </span>
+                                {onOpenAiTab && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onClose();
+                                      onOpenAiTab('chain');
+                                    }}
+                                    className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline"
+                                  >
+                                    مشاهده زنجیره‌های ۳ ضلعی ←
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                {topMatches.map(({ listing, diff, score }) => (
+                                  <button
+                                    key={listing.id}
+                                    type="button"
+                                    onClick={() => {
+                                      onSelectListing(listing);
+                                      onClose();
+                                    }}
+                                    className="p-2.5 rounded-[6px] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] bg-[var(--surface-neutral-subtle)] text-right space-y-1 transition-colors"
+                                  >
+                                    <div className="flex items-center justify-between text-[10px]">
+                                      <span className="font-bold text-[var(--semantic-positive)]">
+                                        {toPersianDigits(score)}٪ تطابق
+                                      </span>
+                                      <span className="text-[var(--content-neutral-default)]">{listing.city}</span>
+                                    </div>
+                                    <div className="text-[12px] font-bold truncate">{listing.title}</div>
+                                    <div className="text-[11px] text-[var(--brand-primary)]">
+                                      مابه‌التفاوت: {diff === 0 ? 'سربه‌سر' : formatToman(diff)}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}
@@ -1107,6 +1656,17 @@ export default function UserDashboardModal({
                             <button
                               type="button"
                               onClick={() => {
+                                setAgreementCopied(false);
+                                setPreviewOfferAgreement(offer);
+                              }}
+                              className="kt-button--outlined !h-[32px] !px-3 text-[11px]"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-[var(--brand-primary)]" />
+                              <span>تفاهم‌نامه امن</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
                                 onClose();
                                 onOpenChatFromOffer(offer);
                               }}
@@ -1117,9 +1677,76 @@ export default function UserDashboardModal({
                             </button>
                           </div>
                         </div>
+
+                        {offer.status === 'accepted' && (
+                          <div className="pt-2.5 mt-1 border-t border-[var(--border-neutral-weaker)] grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                            {[
+                              { step: '۱. توافق اولیه', done: true },
+                              { step: '۲. رویت و کارشناسی', done: true },
+                              { step: '۳. استعلام سند / ۵۰/۵۰', done: false },
+                              { step: '۴. تحویل نهایی', done: false },
+                            ].map((st) => (
+                              <div
+                                key={st.step}
+                                className={`px-2 py-1.5 rounded text-center font-medium ${
+                                  st.done
+                                    ? 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
+                                    : 'bg-[var(--surface-neutral-subtle)] text-[var(--content-neutral-default)]'
+                                }`}
+                              >
+                                {st.step} {st.done ? '✓' : '⏳'}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                 </div>
+
+                {previewOfferAgreement && (() => {
+                  const targetAd = allListings.find((l) => l.id === previewOfferAgreement.listingId);
+                  const agreementText = generateBarterAgreementDraft({
+                    listingTitle: targetAd?.title || previewOfferAgreement.listingTitle,
+                    listingCode: targetAd?.id || previewOfferAgreement.listingId,
+                    listingPrice: targetAd?.price || previewOfferAgreement.listingPrice,
+                    offeredTitle: previewOfferAgreement.offeredItemTitle,
+                    offeredPrice: previewOfferAgreement.offeredEstimatedPrice,
+                    sellerName: targetAd?.sellerName || previewOfferAgreement.proposerName,
+                    useInstallment: previewOfferAgreement.installmentRequested,
+                  });
+                  return (
+                    <div className="p-4 rounded-[8px] border-2 border-[var(--brand-action)]/40 bg-[var(--surface-neutral-subtle)] space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-bold text-[var(--brand-primary)]">
+                          پیش‌نویس تفاهم‌نامه اولیه تهاتر امن
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(agreementText).catch(() => undefined);
+                              setAgreementCopied(true);
+                            }}
+                            className="kt-button--primary !h-[30px] !px-3 text-[11px]"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{agreementCopied ? 'کپی شد ✓' : 'کپی متن قرارداد'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewOfferAgreement(null)}
+                            className="text-[12px] text-[var(--content-neutral-default)] hover:underline"
+                          >
+                            بستن
+                          </button>
+                        </div>
+                      </div>
+                      <pre className="p-3 rounded bg-white border border-[var(--border-neutral-weaker)] text-[11px] leading-6 whitespace-pre-wrap font-sans text-[var(--content-neutral-stronger)]">
+                        {agreementText}
+                      </pre>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1428,6 +2055,130 @@ export default function UserDashboardModal({
               </div>
             )}
 
+            {/* TAB 12: SAFETY, ANTI-FRAUD & SESSION SECURITY */}
+            {tab === 'safety' && (
+              <div className="space-y-5">
+                <div className="pb-3 border-b border-[var(--border-neutral-weaker)]">
+                  <h3 className="text-[17px] font-bold text-[var(--content-neutral-stronger)]">
+                    مقابله با مزاحمت، پیشگیری از کلاهبرداری و امنیت نشست‌ها
+                  </h3>
+                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-0.5">
+                    راهنمای معامله امن تهاتر، ثبت فوری گزارش رفتار مشکوک و کنترل دستگاه‌های متصل به حساب موبایل شما.
+                  </p>
+                </div>
+
+                {/* Anti-Fraud Golden Checklist */}
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--semantic-warning-soft)]/40 space-y-2">
+                  <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)] flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-[var(--brand-primary)]" />
+                    <span>سپر امنیت معامله بدون کلاهبرداری در تهاتر آپ:</span>
+                  </div>
+                  <ul className="space-y-1.5 text-[12px] text-[var(--content-neutral-stronger)] leading-6">
+                    <li>• پیش از رویت حضوری کالا/ملک و تطبیق مدارک، هیچ مبلغی به‌عنوان بیعانه واریز نکنید.</li>
+                    <li>• برای معاملات ملک و خودرو از سامانه ثبت اسناد (`my.ssaa.ir`) استعلام اصالت سند و کد رهگیری بگیرید.</li>
+                    <li>• از کلیک روی لینک‌های درگاه پرداخت ناشناس در پیامک یا شبکه‌های اجتماعی خارجی خودداری کنید.</li>
+                  </ul>
+                </div>
+
+                {/* Report Fraud / Harassment Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!safetyDetails.trim()) return;
+                    onSubmitSafetyReport(safetySubject, safetyDetails.trim());
+                    setSafetyDetails('');
+                    setSafetySubmittedMsg('گزارش امنیتی شما ثبت شد و همکاران پشتیبانی/نظارت به‌سرعت رسیدگی می‌کنند.');
+                    setTimeout(() => setSafetySubmittedMsg(''), 4000);
+                  }}
+                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3"
+                >
+                  <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                    ثبت گزارش مزاحمت یا رفتار مشکوک
+                  </div>
+                  {safetySubmittedMsg && (
+                    <div className="p-2.5 rounded bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-medium">
+                      {safetySubmittedMsg}
+                    </div>
+                  )}
+                  <select
+                    value={safetySubject}
+                    onChange={(e) => setSafetySubject(e.target.value)}
+                    className="kt-input !h-[38px] text-[12px] bg-white"
+                  >
+                    <option value="درخواست بیعانه پیش از رویت حضوری">درخواست بیعانه پیش از رویت حضوری</option>
+                    <option value="ارسال لینک جعلی یا فیشینگ در چت">ارسال لینک جعلی یا فیشینگ در چت</option>
+                    <option value="مزاحمت تلفنی یا پیام نامتعارف">مزاحمت تلفنی یا پیام نامتعارف</option>
+                    <option value="عدم تطابق کالا یا سند جعلی">عدم تطابق کالا یا سند جعلی</option>
+                  </select>
+                  <textarea
+                    rows={2}
+                    value={safetyDetails}
+                    onChange={(e) => setSafetyDetails(e.target.value)}
+                    placeholder="شماره تماس متخلف، عنوان آگهی یا شرح دقیق ماجرا را بنویسید..."
+                    className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[12px]"
+                  />
+                  <div className="flex justify-end">
+                    <button type="submit" className="kt-button--primary !h-[36px] !px-4 text-[12px]">
+                      ارسال به تیم امنیت و نظارت
+                    </button>
+                  </div>
+                </form>
+
+                {/* Active Mobile Sessions & Devices */}
+                <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                      نشست‌های فعال و دستگاه‌های متصل با شماره موبایل ({toPersianDigits(sessions.length)})
+                    </div>
+                    {sessions.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={onRevokeOtherSessions}
+                        className="text-[11px] font-bold text-[var(--semantic-negative)] hover:underline"
+                      >
+                        خروج از سایر دستگاه‌ها
+                      </button>
+                    )}
+                  </div>
+                  <div className="divide-y divide-[var(--border-neutral-weaker)] border border-[var(--border-neutral-weaker)] rounded-[6px]">
+                    {sessions.map((s) => (
+                      <div key={s.id} className="p-3 flex items-center justify-between gap-2 text-[12px]">
+                        <div>
+                          <div className="font-bold text-[var(--content-neutral-stronger)]">
+                            {s.deviceLabel}
+                          </div>
+                          <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
+                            {s.loginMethod} · شماره: <span className="dir-ltr">{s.phoneMasked}</span>
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            s.isCurrent
+                              ? 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
+                              : 'bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-default)]'
+                          }`}
+                        >
+                          {s.time}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {isLoggedIn && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={onLogout}
+                        className="kt-button--outlined !h-[34px] text-[12px] text-[var(--semantic-negative)]"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>خروج کامل از حساب کاربری فعلی</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* TAB 10: BUSINESS STORE & PRIVACY/SECURITY SETTINGS */}
             {tab === 'settings' && (
               <div className="space-y-5">
@@ -1487,6 +2238,15 @@ export default function UserDashboardModal({
                       className="accent-[var(--brand-action)]"
                     />
                     <span>شماره تماس من هنگام شروع گفتگو در چت مخفی بماند</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={user.personalizedFeed !== false}
+                      onChange={(e) => onUpdateProfile({ personalizedFeed: e.target.checked })}
+                      className="accent-[var(--brand-action)]"
+                    />
+                    <span>پیشنهاد آگهی‌ها و تهاترهای هوشمند بر اساس بازدیدها و سبد دارایی من</span>
                   </label>
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="text-[12px]">ساعات مجاز پاسخگویی تماس:</label>
