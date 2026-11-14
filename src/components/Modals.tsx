@@ -22,6 +22,8 @@ import {
   FileText,
   Clock,
   FolderOpen,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -30,6 +32,14 @@ import {
   formatToman,
   toPersianDigits,
 } from '@/data/mockData';
+import {
+  AiConfig,
+  DEFAULT_AI_CONFIG,
+  analyzeChatSafety,
+  autoCompleteDraftAd,
+  generateSmartChatReplies,
+  normalizeDigits,
+} from '@/lib/offlineAi';
 
 /* -------------------------------------------------------------------------- */
 /* 0. Full Categories Modal (📂 همه آگهی‌ها)                                  */
@@ -312,18 +322,23 @@ export function CityModal({ selectedCities, onConfirmCities, onClose }: CityModa
 interface PostAdModalProps {
   onCreateListing: (listing: Listing) => void;
   onClose: () => void;
+  aiConfig?: AiConfig;
 }
 
 const SAMPLE_AD_IMAGES: Record<string, string[]> = {
   املاک: ['/ads/fake-1.svg', '/ads/fake-2.svg'],
   'وسایل نقلیه': ['/ads/fake-4.svg', '/ads/fake-6.svg'],
-  'کالای دیجیتال': ['/ads/iphone16.svg', '/ads/macbook.svg'],
-  'خانه و آشپزخانه': ['/ads/sofa.svg'],
-  'وسایل شخصی': ['/ads/watch.svg'],
+  'کالای دیجیتال': ['/ads/fake-3.svg', '/ads/fake-7.svg'],
+  'خانه و آشپزخانه': ['/ads/fake-8.svg'],
+  'وسایل شخصی': ['/ads/fake-9.svg'],
   'تجهیزات و صنعتی': ['/ads/fake-5.svg'],
 };
 
-export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
+export function PostAdModal({
+  onCreateListing,
+  onClose,
+  aiConfig = DEFAULT_AI_CONFIG,
+}: PostAdModalProps) {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0].name);
   const [subcategory, setSubcategory] = useState(CATEGORIES[0].subcategories[0]);
@@ -336,9 +351,15 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
   const [postalCode, setPostalCode] = useState('');
   const [pinPos, setPinPos] = useState<{ x: number; y: number } | null>({ x: 50, y: 50 });
   const [hasExchange, setHasExchange] = useState(true);
+  const [exchangeWith, setExchangeWith] = useState('');
   const [description, setDescription] = useState('');
   const [isVerifiedPhotos, setIsVerifiedPhotos] = useState<'yes' | 'no'>('yes');
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [aiAuditHint, setAiAuditHint] = useState<{
+    approvalChance: number;
+    warnings: string[];
+    tips: string[];
+  } | null>(null);
   const [error, setError] = useState('');
 
   const selectedCatObj = CATEGORIES.find((c) => c.name === category) || CATEGORIES[0];
@@ -354,6 +375,30 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
     setCity(newCity);
     const obj = CITIES.find((c) => c.name === newCity);
     if (obj && obj.neighborhoods.length > 0) setNeighborhood(obj.neighborhoods[0]);
+  };
+
+  const handleRunAiCopilot = () => {
+    const res = autoCompleteDraftAd({
+      title: title || `${subcategory} در ${neighborhood}`,
+      category,
+      subcategory,
+      city,
+      neighborhood,
+      price,
+      exchangeWith,
+    });
+    setTitle(res.suggestedTitle);
+    setCategory(res.detectedCategory);
+    setSubcategory(res.detectedSubcategory);
+    if (!price.trim()) setPrice(String(res.suggestedPrice));
+    setHasExchange(true);
+    setExchangeWith(res.suggestedExchangeWith);
+    setDescription(res.suggestedDescription);
+    setAiAuditHint({
+      approvalChance: res.approvalChance,
+      warnings: res.warnings,
+      tips: res.tips,
+    });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -377,12 +422,13 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
       setError('لطفاً عنوان آگهی را وارد کنید.');
       return;
     }
-    if (!phone1.trim() || phone1.trim().length < 10) {
+    const cleanPhone = normalizeDigits(phone1.trim());
+    if (!cleanPhone || cleanPhone.length < 10) {
       setError('لطفاً شماره تماس اول معتبر وارد کنید.');
       return;
     }
 
-    const cleanPrice = Number(price.replace(/[^\d]/g, '')) || 0;
+    const cleanPrice = Number(normalizeDigits(price).replace(/[^\d]/g, '')) || 0;
     const fallbackImages = SAMPLE_AD_IMAGES[category] || ['/ads/fake-2.svg'];
     const finalImages = uploadedImages.length > 0 ? uploadedImages : [fallbackImages[0]];
 
@@ -398,7 +444,7 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
       priceLabel: cleanPrice === 0 ? 'توافقی' : undefined,
       isNegotiable: cleanPrice === 0,
       hasExchange,
-      exchangeWith: hasExchange ? 'کالا، خودرو یا ملک هم‌ارزش' : undefined,
+      exchangeWith: hasExchange ? exchangeWith.trim() || 'کالا، خودرو یا ملک هم‌ارزش' : undefined,
       hasInstallmentPlan: true,
       isVerifiedPhotos: isVerifiedPhotos === 'yes',
       badge: hasExchange ? 'معاوضه' : undefined,
@@ -414,7 +460,7 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
       description:
         description.trim() ||
         `${title.trim()} در ${city} (${neighborhood}). آماده بازدید و معامله یا تهاتر توافقی.`,
-      sellerPhone: toPersianDigits(phone1.trim()),
+      sellerPhone: toPersianDigits(cleanPhone),
       sellerName: 'کاربر تهاتر آپ',
       coordinates: {
         lat: pinPos ? 35.7 + pinPos.y * 0.001 : 35.72,
@@ -469,10 +515,47 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="مثلاً: آپارتمان ۸۰ متری در تهران"
+              placeholder="مثلاً: آپارتمان ۸۰ متری در تهران یا آیفون ۱۶ پرو مکس"
               className="kt-input"
             />
           </div>
+
+          {/* Offline AI Ad Copilot Bar */}
+          {aiConfig.enabled && aiConfig.adCopilot && (
+            <div className="p-3 rounded-[6px] border border-[var(--brand-action)]/30 bg-[var(--brand-soft)]/60 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--brand-primary)]">
+                  <Sparkles className="w-4 h-4" />
+                  <span>دستیار ثبت آگهی (هوش مصنوعی آفلاین)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRunAiCopilot}
+                  className="kt-button--primary !h-[30px] !px-3 text-[11px]"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>تکمیل خودکار و تخمین قیمت ✨</span>
+                </button>
+              </div>
+              {aiAuditHint && (
+                <div className="text-[11px] text-[var(--content-neutral-stronger)] space-y-1 bg-white/80 p-2 rounded">
+                  <div className="font-bold text-[var(--semantic-positive)]">
+                    شانس تایید فوری ناظر: {toPersianDigits(aiAuditHint.approvalChance)}٪
+                  </div>
+                  {aiAuditHint.warnings.map((w, i) => (
+                    <div key={i} className="text-[var(--semantic-negative)]">
+                      • {w}
+                    </div>
+                  ))}
+                  {aiAuditHint.tips.map((t, i) => (
+                    <div key={i} className="text-[var(--content-neutral-default)]">
+                      • {t}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* دسته‌بندی * و زیردسته * */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -652,8 +735,8 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
           </div>
 
           {/* امکان معاوضه */}
-          <div className="p-3.5 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)]">
-            <label className="block text-[13px] font-bold text-[var(--content-neutral-stronger)] mb-2">
+          <div className="p-3.5 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2.5">
+            <label className="block text-[13px] font-bold text-[var(--content-neutral-stronger)]">
               امکان معاوضه
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
@@ -668,6 +751,15 @@ export function PostAdModal({ onCreateListing, onClose }: PostAdModalProps) {
                 <span>بله - امکان معاوضه وجود دارد</span>
               </span>
             </label>
+            {hasExchange && (
+              <input
+                type="text"
+                value={exchangeWith}
+                onChange={(e) => setExchangeWith(e.target.value)}
+                placeholder="مورد دلخواه جهت معاوضه (مثلاً: خودرو هم‌رده یا لپ‌تاپ)..."
+                className="kt-input !h-[36px] text-[12px]"
+              />
+            )}
           </div>
 
           {/* توضیحات */}
@@ -1107,6 +1199,7 @@ interface ChatModalProps {
   onSelectThread: (id: string) => void;
   onSendMessage: (threadId: string, text: string) => void;
   onClose: () => void;
+  aiConfig?: AiConfig;
 }
 
 export function ChatModal({
@@ -1115,9 +1208,26 @@ export function ChatModal({
   onSelectThread,
   onSendMessage,
   onClose,
+  aiConfig = DEFAULT_AI_CONFIG,
 }: ChatModalProps) {
   const [input, setInput] = useState('');
   const activeThread = threads.find((t) => t.id === activeThreadId) || threads[0];
+
+  const threadRisk = useMemo(() => {
+    if (!aiConfig.enabled || !aiConfig.chatSafetyShield || !activeThread) {
+      return { riskLevel: 'safe' as const };
+    }
+    const combinedText = `${input} ${activeThread.messages.map((m) => m.text).join(' ')}`;
+    return analyzeChatSafety(combinedText);
+  }, [aiConfig, activeThread, input]);
+
+  const smartReplies = useMemo(
+    () =>
+      activeThread
+        ? generateSmartChatReplies(activeThread.subtitle || activeThread.title, true)
+        : [],
+    [activeThread]
+  );
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1139,6 +1249,12 @@ export function ChatModal({
           <div className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-[var(--brand-primary)]" />
             <h3 className="text-[16px] font-bold">چت و گفتگوی امن تهاتر آپ</h3>
+            {aiConfig.enabled && aiConfig.chatSafetyShield && (
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[10px] font-bold">
+                <ShieldCheck className="w-3 h-3" />
+                <span>محافظ هوشمند فعال</span>
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -1189,6 +1305,20 @@ export function ChatModal({
                   </div>
                 </div>
 
+                {/* Offline AI Chat Safety Shield Alert */}
+                {threadRisk.riskLevel !== 'safe' && threadRisk.warningText && (
+                  <div
+                    className={`px-3.5 py-2 text-[11px] font-bold flex items-center gap-2 border-b ${
+                      threadRisk.riskLevel === 'danger'
+                        ? 'bg-[var(--brand-soft)] text-[var(--semantic-negative)] border-[var(--semantic-negative)]/30'
+                        : 'bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] border-[var(--semantic-warning)]/30'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{threadRisk.warningText}</span>
+                  </div>
+                )}
+
                 <div className="flex-1 p-4 overflow-y-auto space-y-2.5">
                   {activeThread.messages.map((m) => (
                     <div
@@ -1218,18 +1348,15 @@ export function ChatModal({
                 </div>
 
                 <div className="px-3 pt-2 flex flex-wrap gap-1.5">
-                  {[
-                    'سلام، امکان معاوضه با خودرو دارید؟',
-                    'آیا طرح اقساط ۵۰/۵۰ شامل این آگهی می‌شود؟',
-                    'زمان بازدید حضوری چه ساعتی است؟',
-                  ].map((chip) => (
+                  {smartReplies.map((chip) => (
                     <button
                       key={chip}
                       type="button"
                       onClick={() => onSendMessage(activeThread.id, chip)}
-                      className="text-[11px] px-2.5 py-1 rounded-full bg-white border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[var(--content-neutral-default)] hover:text-[var(--brand-primary)] transition-colors"
+                      className="text-[11px] px-2.5 py-1 rounded-full bg-white border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[var(--content-neutral-default)] hover:text-[var(--brand-primary)] transition-colors flex items-center gap-1 text-right"
                     >
-                      {chip}
+                      <Sparkles className="w-3 h-3 text-[var(--brand-action)] shrink-0" />
+                      <span className="truncate max-w-[260px]">{chip}</span>
                     </button>
                   ))}
                 </div>
@@ -1556,17 +1683,24 @@ export function MyTahatorModal({
 export function SupportModal({
   onClose,
   onOpenAdminChat,
+  onSubmitTicket,
 }: {
   onClose: () => void;
   onOpenAdminChat: () => void;
+  onSubmitTicket?: (subject: string, category: 'فنی' | 'معاوضه و داوری' | 'تسهیلات و اقساط' | 'گزارش تخلف', text: string) => void;
 }) {
+  const [ticketSubject, setTicketSubject] = useState('');
+  const [ticketCategory, setTicketCategory] = useState<'فنی' | 'معاوضه و داوری' | 'تسهیلات و اقساط' | 'گزارش تخلف'>('معاوضه و داوری');
+  const [ticketText, setTicketText] = useState('');
+  const [ticketSent, setTicketSent] = useState(false);
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[480px] bg-[var(--surface-neutral-weaker)] rounded-[8px] shadow-2xl overflow-hidden"
+        className="w-full max-w-[520px] bg-[var(--surface-neutral-weaker)] rounded-[8px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between">
@@ -1583,7 +1717,7 @@ export function SupportModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-4 text-[13px] leading-[24px]">
+        <div className="p-5 space-y-4 text-[13px] leading-[24px] overflow-y-auto">
           <div className="p-3.5 rounded-[6px] bg-[var(--surface-neutral-weak)] flex items-center justify-between">
             <span className="font-medium">شماره تماس مستقیم پشتیبانی:</span>
             <span className="font-bold text-[15px] text-[var(--brand-primary)] dir-ltr">
@@ -1600,6 +1734,58 @@ export function SupportModal({
             </p>
           </div>
 
+          {onSubmitTicket && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!ticketSubject.trim() || !ticketText.trim()) return;
+                onSubmitTicket(ticketSubject.trim(), ticketCategory, ticketText.trim());
+                setTicketSent(true);
+                setTicketSubject('');
+                setTicketText('');
+              }}
+              className="p-3.5 rounded-[6px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-2.5"
+            >
+              <div className="font-bold text-[13px] text-[var(--content-neutral-stronger)]">
+                ثبت تیکت در کارتابل کارشناس پشتیبانی
+              </div>
+              {ticketSent && (
+                <div className="p-2 rounded bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-medium">
+                  تیکت شما ثبت شد و در پنل کارشناس پشتیبانی قابل مشاهده است.
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={ticketSubject}
+                  onChange={(e) => setTicketSubject(e.target.value)}
+                  placeholder="موضوع تیکت..."
+                  className="kt-input !h-[34px] text-[12px]"
+                />
+                <select
+                  value={ticketCategory}
+                  onChange={(e) => setTicketCategory(e.target.value as typeof ticketCategory)}
+                  className="kt-input !h-[34px] text-[12px]"
+                >
+                  <option value="معاوضه و داوری">معاوضه و داوری</option>
+                  <option value="تسهیلات و اقساط">تسهیلات و اقساط</option>
+                  <option value="گزارش تخلف">گزارش تخلف</option>
+                  <option value="فنی">فنی</option>
+                </select>
+              </div>
+              <textarea
+                rows={2}
+                value={ticketText}
+                onChange={(e) => setTicketText(e.target.value)}
+                placeholder="شرح درخواست یا سوال خود را بنویسید..."
+                className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] bg-white text-[12px]"
+              />
+              <button type="submit" className="kt-button--outlined w-full !h-[34px] text-[12px]">
+                ارسال تیکت به پشتیبانی
+              </button>
+            </form>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -1609,7 +1795,7 @@ export function SupportModal({
             className="kt-button--primary w-full"
           >
             <Headphones className="w-4 h-4" />
-            <span>شروع گفتگو با ادمین سایت</span>
+            <span>شروع گفتگو آنلاین با کارشناس</span>
           </button>
         </div>
       </div>

@@ -11,9 +11,11 @@ import {
   Percent,
   Menu,
   ClipboardList,
-  UserPlus,
+  Sparkles,
+  Shield,
 } from 'lucide-react';
 import { POPULAR_SEARCHES, toPersianDigits } from '@/data/mockData';
+import { ROLE_META, UserRole } from '@/types/platform';
 
 interface NavbarProps {
   selectedCities: string[];
@@ -26,10 +28,13 @@ interface NavbarProps {
   onOpenFacilities: () => void;
   onOpenInstallmentPlan: () => void;
   onOpenMyAds: () => void;
-  onOpenRegister: () => void;
+  onOpenAiAssistant: () => void;
+  onOpenRolePanel: () => void;
   onOpenMobileSidebar: () => void;
   bookmarkCount: number;
-  user: { name: string; phone: string } | null;
+  isLoggedIn: boolean;
+  userName: string;
+  userRole: UserRole;
 }
 
 export default function Navbar({
@@ -43,10 +48,13 @@ export default function Navbar({
   onOpenFacilities,
   onOpenInstallmentPlan,
   onOpenMyAds,
-  onOpenRegister,
+  onOpenAiAssistant,
+  onOpenRolePanel,
   onOpenMobileSidebar,
   bookmarkCount,
-  user,
+  isLoggedIn,
+  userName,
+  userRole,
 }: NavbarProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -140,7 +148,7 @@ export default function Navbar({
           </button>
 
           {/* Exact Search Input: جستجو در همه آگهی‌ها... */}
-          <div className="relative flex-1 min-w-0 sm:min-w-[200px] max-w-[380px]" ref={searchRef}>
+          <div className="relative flex-1 min-w-0 sm:min-w-[170px] max-w-[320px]" ref={searchRef}>
             <div className="relative flex items-center">
               <Search className="w-[17px] h-[17px] text-[var(--content-neutral-default)] absolute right-3 pointer-events-none" />
               <input
@@ -200,31 +208,43 @@ export default function Navbar({
           </button>
         </div>
 
-        {/* Left side (End in RTL): Exact tahator.app Menu Buttons */}
+        {/* Left side (End in RTL): Dashboard, AI Assistant, Role Center & Primary CTAs */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* 📋 آگهی‌های من */}
+          {/* هوش مصنوعی آفلاین ✨ */}
+          <button
+            type="button"
+            onClick={onOpenAiAssistant}
+            className="hidden md:inline-flex kt-button--outlined !h-[36px] !px-2.5 !border-[var(--brand-action)]/40 text-[var(--brand-primary)] hover:!bg-[var(--brand-soft)] text-[12px]"
+            title="دستیار هوشمند آفلاین تهاتر آپ"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>هوش مصنوعی</span>
+          </button>
+
+          {/* مرکز نقش‌ها (کاربر، کسب‌وکار، ناظر، پشتیبان، مدیر ارشد) */}
+          <button
+            type="button"
+            onClick={onOpenRolePanel}
+            className="hidden lg:inline-flex kt-button--ghost !px-2 text-[12px]"
+            title="تغییر نقش و مشاهده پنل‌های مدیریتی و پشتیبانی"
+          >
+            <Shield className="w-4 h-4 text-[var(--brand-action)]" />
+            <span>نقش: {ROLE_META[userRole].shortTitle}</span>
+          </button>
+
+          {/* 📋 تهاتر من (داشبورد کامل کاربری) */}
           <button
             type="button"
             onClick={onOpenMyAds}
             className="hidden md:inline-flex kt-button--ghost !px-2.5 relative"
           >
             <ClipboardList className="w-4 h-4 text-[var(--content-neutral-default)]" />
-            <span className="text-[13px]">آگهی‌های من</span>
+            <span className="text-[13px]">{isLoggedIn ? userName : 'تهاتر من'}</span>
             {bookmarkCount > 0 && (
               <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold flex items-center justify-center">
                 {toPersianDigits(bookmarkCount)}
               </span>
             )}
-          </button>
-
-          {/* ثبت نام */}
-          <button
-            type="button"
-            onClick={onOpenRegister}
-            className="hidden lg:inline-flex kt-button--ghost !px-2.5 text-[13px]"
-          >
-            <UserPlus className="w-4 h-4 text-[var(--content-neutral-default)]" />
-            <span>{user ? user.name : 'ثبت نام'}</span>
           </button>
 
           {/* + ثبت آگهی (Primary Red CTA) */}

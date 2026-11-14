@@ -24,8 +24,18 @@ import {
   Flag,
   Maximize2,
   Sparkles,
+  ShieldCheck,
+  Scale,
 } from 'lucide-react';
 import { Listing, formatToman, toPersianDigits } from '@/data/mockData';
+import {
+  AiConfig,
+  DEFAULT_AI_CONFIG,
+  evaluateListingPrice,
+  generateSmartListingSummary,
+  matchBarterListings,
+  normalizeDigits,
+} from '@/lib/offlineAi';
 
 interface AdDetailModalProps {
   listing: Listing;
@@ -38,6 +48,17 @@ interface AdDetailModalProps {
   onOpenChatWith: (listing: Listing, isAdmin?: boolean) => void;
   onSelectListing: (listing: Listing) => void;
   onOpenInstallmentPlan: () => void;
+  onOpenAiCompare?: (listing: Listing) => void;
+  onSubmitBarterOffer?: (payload: {
+    listing: Listing;
+    offeredItemTitle: string;
+    offeredEstimatedPrice: number;
+    installmentRequested: boolean;
+    note: string;
+  }) => void;
+  onReportListing?: (listing: Listing, reason: string, details: string) => void;
+  onTrackPhoneClick?: (listingId: string) => void;
+  aiConfig?: AiConfig;
 }
 
 export default function AdDetailModal({
@@ -51,6 +72,11 @@ export default function AdDetailModal({
   onOpenChatWith,
   onSelectListing,
   onOpenInstallmentPlan,
+  onOpenAiCompare,
+  onSubmitBarterOffer,
+  onReportListing,
+  onTrackPhoneClick,
+  aiConfig = DEFAULT_AI_CONFIG,
 }: AdDetailModalProps) {
   const [activeImgIdx, setActiveImgIdx] = useState(0);
   const [fullscreenImg, setFullscreenImg] = useState(false);
@@ -58,6 +84,15 @@ export default function AdDetailModal({
   const [showPhone, setShowPhone] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
+  const [showOfferForm, setShowOfferForm] = useState(false);
+  const [offerItemTitle, setOfferItemTitle] = useState('');
+  const [offerPrice, setOfferPrice] = useState('');
+  const [offerInstallment, setOfferInstallment] = useState(true);
+  const [offerNote, setOfferNote] = useState('');
+  const [offerSubmitted, setOfferSubmitted] = useState(false);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportReason, setReportReason] = useState('درخواست بیعانه / مشکوک');
+  const [reportDetails, setReportDetails] = useState('');
   const [reported, setReported] = useState(false);
 
   const images =
@@ -78,13 +113,20 @@ export default function AdDetailModal({
     setTimeout(() => setCopiedShare(false), 2200);
   };
 
-  // Smart Barter Matching: find other listings with hasExchange that match or complement price/category
-  const barterMatches = useMemo(() => {
-    if (!listing.hasExchange) return [];
-    return allListings
-      .filter((item) => item.id !== listing.id && item.hasExchange)
-      .slice(0, 3);
-  }, [allListings, listing]);
+  const priceEval = useMemo(
+    () => evaluateListingPrice(listing, allListings),
+    [listing, allListings]
+  );
+
+  const aiSummary = useMemo(
+    () => generateSmartListingSummary(listing),
+    [listing]
+  );
+
+  const barterMatches = useMemo(
+    () => matchBarterListings(listing, allListings),
+    [allListings, listing]
+  );
 
   const getAmenityIcon = (type: string, available: boolean) => {
     const cls = `w-5 h-5 ${
@@ -135,7 +177,7 @@ export default function AdDetailModal({
           </button>
         </div>
 
-        {/* Main 2-Column Divar Detail Body */}
+        {/* Main 2-Column Detail Body */}
         <div className="p-4 sm:p-6 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Right Column (Content & Specs - ~58% -> 7 cols) */}
           <div className="lg:col-span-7 space-y-5">
@@ -181,7 +223,7 @@ export default function AdDetailModal({
               </div>
             </div>
 
-            {/* Divar Safety Warning Accordion */}
+            {/* Safety Warning Accordion */}
             <div className="border-y border-[var(--border-neutral-weaker)]">
               <button
                 type="button"
@@ -207,13 +249,19 @@ export default function AdDetailModal({
               )}
             </div>
 
-            {/* Action Buttons Row (اطلاعات تماس، چت، ادمین، نشان، اشتراک) */}
+            {/* Action Buttons Row (اطلاعات تماس، چت، پیشنهاد معاوضه، ادمین، نشان، اشتراک) */}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowPhone((prev) => !prev)}
-                  className="kt-button--primary !h-[42px] !px-5 shadow-sm"
+                  onClick={() => {
+                    setShowPhone((prev) => {
+                      const next = !prev;
+                      if (next) onTrackPhoneClick?.(listing.id);
+                      return next;
+                    });
+                  }}
+                  className="kt-button--primary !h-[42px] !px-4 sm:!px-5 shadow-sm"
                 >
                   <Phone className="w-4 h-4" />
                   <span>{showPhone ? listing.sellerPhone : 'اطلاعات تماس'}</span>
@@ -222,20 +270,31 @@ export default function AdDetailModal({
                 <button
                   type="button"
                   onClick={() => onOpenChatWith(listing, false)}
-                  className="kt-button--outlined !h-[42px] !px-5"
+                  className="kt-button--outlined !h-[42px] !px-4"
                 >
                   <MessageSquare className="w-4 h-4" />
                   <span>چت</span>
                 </button>
 
+                {listing.hasExchange && onSubmitBarterOffer && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOfferForm((prev) => !prev)}
+                    className="kt-button--outlined !h-[42px] !px-3.5 !border-[var(--brand-action)]/40 text-[var(--brand-primary)] hover:!bg-[var(--brand-soft)]"
+                  >
+                    <ArrowLeftRight className="w-4 h-4" />
+                    <span>ثبت پیشنهاد معاوضه</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => onOpenChatWith(listing, true)}
-                  className="kt-button--outlined !h-[42px] !px-3.5 !border-[var(--brand-action)]/40 text-[var(--brand-primary)] hover:!bg-[var(--brand-soft)]"
-                  title="مشاوره و کارشناسی تهاتر با ادمین سایت"
+                  className="kt-button--outlined !h-[42px] !px-3.5 text-[12px]"
+                  title="مشاوره و کارشناسی تهاتر با کارشناس سایت"
                 >
-                  <Headphones className="w-4 h-4" />
-                  <span>گفتگو با ادمین</span>
+                  <Headphones className="w-4 h-4 text-[var(--brand-action)]" />
+                  <span>پشتیبان</span>
                 </button>
               </div>
 
@@ -269,6 +328,89 @@ export default function AdDetailModal({
               </div>
             </div>
 
+            {/* Inline Barter Offer Form */}
+            {showOfferForm && onSubmitBarterOffer && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!offerItemTitle.trim()) return;
+                  const estPrice =
+                    Number(normalizeDigits(offerPrice).replace(/[^\d]/g, '')) || 0;
+                  onSubmitBarterOffer({
+                    listing,
+                    offeredItemTitle: offerItemTitle.trim(),
+                    offeredEstimatedPrice: estPrice,
+                    installmentRequested: offerInstallment,
+                    note:
+                      offerNote.trim() ||
+                      `پیشنهاد معاوضه با ${offerItemTitle.trim()} در شرایط عالی.`,
+                  });
+                  setOfferSubmitted(true);
+                  setShowOfferForm(false);
+                }}
+                className="p-4 rounded-[8px] border-2 border-[var(--brand-action)]/35 bg-[var(--brand-soft)]/50 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[14px] font-bold text-[var(--brand-primary)]">
+                    🔄 ثبت پیشنهاد معاوضه برای این آگهی
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowOfferForm(false)}
+                    className="text-[12px] text-[var(--content-neutral-default)]"
+                  >
+                    بستن
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    value={offerItemTitle}
+                    onChange={(e) => setOfferItemTitle(e.target.value)}
+                    placeholder="کالا یا دارایی پیشنهادی شما (مثلاً: پژو ۲۰۷ مدل ۱۴۰۲)..."
+                    className="kt-input !h-[38px] text-[12px]"
+                  />
+                  <input
+                    type="text"
+                    value={offerPrice}
+                    onChange={(e) => setOfferPrice(e.target.value)}
+                    placeholder="ارزش تقریبی پیشنهادی (تومان)"
+                    className="kt-input !h-[38px] text-[12px] text-left dir-ltr"
+                  />
+                </div>
+                <textarea
+                  rows={2}
+                  value={offerNote}
+                  onChange={(e) => setOfferNote(e.target.value)}
+                  placeholder="توضیحات تکمیلی یا پیشنهاد زمان بازدید..."
+                  className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] bg-white text-[12px]"
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 text-[12px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={offerInstallment}
+                      onChange={(e) => setOfferInstallment(e.target.checked)}
+                      className="accent-[var(--brand-action)]"
+                    />
+                    <span>درخواست تسویه مابه‌التفاوت با اقساط ۵۰/۵۰</span>
+                  </label>
+                  <button type="submit" className="kt-button--primary !h-[34px] !px-4 text-[12px]">
+                    ارسال پیشنهاد معاوضه
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {offerSubmitted && (
+              <div className="p-3 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[13px] font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>
+                  پیشنهاد معاوضه شما ثبت شد و از بخش «پیشنهادهای معاوضه» در داشبورد تهاتر من قابل پیگیری است.
+                </span>
+              </div>
+            )}
+
             {/* Revealed Seller Contact Card */}
             {showPhone && (
               <div className="p-3.5 rounded-[6px] bg-[var(--surface-neutral-weak)] border border-[var(--border-neutral-weaker)] flex items-center justify-between gap-3">
@@ -297,6 +439,77 @@ export default function AdDetailModal({
                     </>
                   )}
                 </button>
+              </div>
+            )}
+
+            {/* Offline AI Price Estimator & Market Range Thermometer Card */}
+            {aiConfig.enabled && aiConfig.priceEstimator && (
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--content-neutral-stronger)]">
+                    <Scale className="w-4 h-4 text-[var(--brand-primary)]" />
+                    <span>کارشناسی هوشمند قیمت (هوش مصنوعی آفلاین)</span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                      priceEval.status === 'good-deal'
+                        ? 'bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
+                        : priceEval.status === 'high'
+                        ? 'bg-[var(--brand-soft)] text-[var(--semantic-negative)]'
+                        : 'bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)]'
+                    }`}
+                  >
+                    {priceEval.statusLabel}
+                  </span>
+                </div>
+
+                {/* Thermometer Gauge */}
+                <div className="space-y-1.5">
+                  <div className="relative h-2.5 rounded-full overflow-hidden flex bg-[var(--border-neutral-weaker)]">
+                    <div className="w-1/3 bg-[#10b981]" />
+                    <div className="w-1/3 bg-[#f59e0b]" />
+                    <div className="w-1/3 bg-[#ef4444]" />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#2a2a30] shadow transition-all"
+                      style={{ left: `calc(${priceEval.markerPercent}% - 7px)` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-[var(--content-neutral-default)]">
+                    <span>حداقل منصفانه: {formatToman(priceEval.minFair)}</span>
+                    <span>حداکثر بازار: {formatToman(priceEval.maxFair)}</span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-[var(--content-neutral-default)] flex flex-wrap items-center justify-between gap-2">
+                  <span>{priceEval.reason}</span>
+                  <span>دقت تخمین: {toPersianDigits(priceEval.confidence)}٪</span>
+                </div>
+              </div>
+            )}
+
+            {/* Offline AI 3-Point Smart Summary & Safety Score */}
+            {aiConfig.enabled && aiConfig.smartSummary && (
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-[var(--brand-primary)]">
+                    <Sparkles className="w-4 h-4" />
+                    <span>خلاصه هوشمند ۳ نکته‌ای آگهی</span>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--semantic-positive)]">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>
+                      شاخص سلامت: {toPersianDigits(aiSummary.safetyScore)}٪ ({aiSummary.safetyLabel})
+                    </span>
+                  </span>
+                </div>
+                <ul className="space-y-1.5 text-[12px] leading-[22px] text-[var(--content-neutral-stronger)] pr-1">
+                  {aiSummary.bullets.map((b, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span className="text-[var(--brand-primary)] font-bold">•</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -419,40 +632,56 @@ export default function AdDetailModal({
               </p>
             </div>
 
-            {/* Smart Barter Match Suggestions (Tahator Feature) */}
-            {listing.hasExchange && barterMatches.length > 0 && (
-              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)]">
-                <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--brand-primary)] mb-3">
-                  <Sparkles className="w-4 h-4" />
-                  <span>پیشنهادهای هوشمند تهاتر هم‌تراز در سیستم</span>
-                </div>
-                <div className="space-y-2">
-                  {barterMatches.map((match) => (
+            {/* Smart Barter Match Suggestions (Offline AI Engine) */}
+            {aiConfig.enabled && aiConfig.barterMatcher && listing.hasExchange && barterMatches.length > 0 && (
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--brand-primary)]">
+                    <Sparkles className="w-4 h-4" />
+                    <span>تطبیق هوشمند معاوضه (هوش مصنوعی آفلاین)</span>
+                  </div>
+                  {onOpenAiCompare && (
                     <button
-                      key={match.id}
                       type="button"
-                      onClick={() => onSelectListing(match)}
-                      className="w-full p-2.5 rounded-[6px] bg-[var(--surface-neutral-weaker)] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] flex items-center justify-between gap-3 text-right transition-colors"
+                      onClick={() => onOpenAiCompare(listing)}
+                      className="text-[11px] font-bold text-[var(--brand-action)] hover:underline"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <img
-                          src={match.images[0]}
-                          alt={match.title}
-                          className="w-11 h-11 rounded-[4px] object-cover shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-[13px] font-medium text-[var(--content-neutral-stronger)] truncate">
-                            {match.title}
-                          </div>
-                          <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
-                            {match.city} ·{' '}
-                            {match.price > 0 ? formatToman(match.price) : 'توافقی'}
+                      مقایسه دوطرفه با آگهی دیگر ‹
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2.5">
+                  {barterMatches.map((m) => (
+                    <button
+                      key={m.listing.id}
+                      type="button"
+                      onClick={() => onSelectListing(m.listing)}
+                      className="w-full p-2.5 rounded-[6px] bg-[var(--surface-neutral-weaker)] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] flex flex-col gap-1.5 text-right transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-3 w-full">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={m.listing.images[0] || '/ads/fake-1.svg'}
+                            alt={m.listing.title}
+                            className="w-11 h-11 rounded-[4px] object-cover shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)] truncate">
+                              {m.listing.title}
+                            </div>
+                            <div className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
+                              {m.listing.city} ·{' '}
+                              {m.listing.price > 0 ? formatToman(m.listing.price) : 'توافقی'}
+                            </div>
                           </div>
                         </div>
+                        <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-extrabold shrink-0">
+                          {toPersianDigits(m.matchPercent)}٪ تطابق
+                        </span>
                       </div>
-                      <span className="text-[11px] font-bold text-[var(--brand-action)] shrink-0">
-                        بررسی تهاتر ‹
-                      </span>
+                      <div className="text-[11px] text-[var(--content-neutral-default)] bg-[var(--surface-neutral-subtle)] px-2 py-1 rounded">
+                        {m.suggestedPlan}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -529,7 +758,7 @@ export default function AdDetailModal({
               )}
             </figure>
 
-            {/* Personal Note Box (Exact Divar copy) */}
+            {/* Personal Note Box */}
             <div className="space-y-1.5">
               <textarea
                 rows={3}
@@ -543,7 +772,7 @@ export default function AdDetailModal({
               </p>
             </div>
 
-            {/* Simulated Divar Location Map with Red Translucent Radius */}
+            {/* Simulated Location Map with Red Translucent Radius */}
             <div className="rounded-[6px] border border-[var(--border-neutral-weaker)] overflow-hidden">
               <div className="relative h-[196px] bg-[#eef2f6] overflow-hidden select-none">
                 {/* Simulated Street Grid SVG */}
@@ -568,7 +797,7 @@ export default function AdDetailModal({
                   <rect x="285" y="115" width="55" height="35" rx="3" fill="#dcfce7" />
                 </svg>
 
-                {/* Divar Translucent Red Circle Radius */}
+                {/* Translucent Red Circle Radius */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div
                     className="w-28 h-28 rounded-full border-2 flex items-center justify-center"
@@ -592,21 +821,67 @@ export default function AdDetailModal({
             </div>
 
             {/* Report Ad Row */}
-            <button
-              type="button"
-              onClick={() => setReported(true)}
-              className="w-full py-3 px-2 border-t border-[var(--border-neutral-weaker)] flex items-center justify-between text-[13px] text-[var(--content-neutral-default)] hover:text-[var(--content-neutral-stronger)] transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <Flag className="w-4 h-4" />
-                <span>
-                  {reported
-                    ? 'گزارش شما با موفقیت ثبت و برای بررسی ارسال شد.'
-                    : 'گزارش آگهی'}
+            <div className="border-t border-[var(--border-neutral-weaker)]">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!reported) setShowReportForm((prev) => !prev);
+                }}
+                className="w-full py-3 px-2 flex items-center justify-between text-[13px] text-[var(--content-neutral-default)] hover:text-[var(--content-neutral-stronger)] transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Flag className="w-4 h-4" />
+                  <span>
+                    {reported
+                      ? 'گزارش شما در کارتابل ناظر آگهی ثبت شد.'
+                      : 'گزارش آگهی / ثبت تخلف'}
+                  </span>
                 </span>
-              </span>
-              {!reported && <ChevronLeft className="w-4 h-4" />}
-            </button>
+                {!reported && <ChevronLeft className="w-4 h-4" />}
+              </button>
+
+              {showReportForm && !reported && (
+                <div className="p-3 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2.5 mb-2">
+                  <select
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="kt-input !h-[34px] text-[12px]"
+                  >
+                    <option value="درخواست بیعانه / مشکوک">درخواست بیعانه / رفتار مشکوک</option>
+                    <option value="قیمت نامتعارف">قیمت نامتعارف یا نادرست</option>
+                    <option value="تصاویر غیرواقعی">تصاویر غیرواقعی / نامرتبط</option>
+                    <option value="آگهی تکراری">آگهی تکراری یا ناموجود</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="توضیح تکمیلی برای تیم نظارت (اختیاری)..."
+                    className="kt-input !h-[34px] text-[12px]"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowReportForm(false)}
+                      className="kt-button--outlined !h-[30px] !px-3 text-[11px]"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onReportListing?.(listing, reportReason, reportDetails);
+                        setReported(true);
+                        setShowReportForm(false);
+                      }}
+                      className="kt-button--primary !h-[30px] !px-4 text-[11px]"
+                    >
+                      ارسال به ناظر
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
