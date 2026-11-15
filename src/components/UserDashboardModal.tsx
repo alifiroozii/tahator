@@ -371,7 +371,7 @@ export default function UserDashboardModal({
                   className="mt-3 w-full kt-button--primary !h-[36px] text-[12px] font-bold"
                 >
                   <LogIn className="w-3.5 h-3.5" />
-                  <span>ورود / عضویت با موبایل</span>
+                  <span>ورود با شماره موبایل</span>
                 </button>
               )}
             </div>
@@ -551,7 +551,7 @@ export default function UserDashboardModal({
                         {isLoggedIn ? toPersianDigits(user.phone) : 'شماره موبایل ثبت نشده'}
                       </span>
                       <span>· شهر: {user.city || 'تهران'}</span>
-                      <span>· عضویت: {user.joinedAt}</span>
+                      <span>· فعال‌سازی: {user.joinedAt}</span>
                     </div>
                   </div>
                 </div>
@@ -1301,7 +1301,7 @@ export default function UserDashboardModal({
                       className="p-3 rounded-[8px] border border-[var(--border-neutral-weaker)] flex items-center gap-3 cursor-pointer hover:bg-[var(--surface-neutral-weak)] transition-colors"
                     >
                       <img
-                        src={ad.images[0] || '/ads/fake-1.svg'}
+                        src={ad.images[0] || '/ads/no-image.svg'}
                         alt={ad.title}
                         className="w-14 h-14 rounded-[4px] object-cover shrink-0 border border-[var(--border-neutral-weaker)]"
                       />

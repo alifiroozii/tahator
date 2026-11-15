@@ -340,7 +340,7 @@ export default function Navbar({
                             className="w-full p-1.5 rounded-[6px] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2 text-right"
                           >
                             <img
-                              src={ad.images[0] || '/ads/fake-1.svg'}
+                              src={ad.images[0] || '/ads/no-image.svg'}
                               alt={ad.title}
                               className="w-9 h-9 rounded-[4px] object-cover shrink-0"
                             />
@@ -480,7 +480,7 @@ export default function Navbar({
                           ورود به حساب کاربری
                         </div>
                         <div className="text-[11px] text-[var(--content-neutral-default)]">
-                          با شماره موبایل و کد تایید آنی
+                          با شماره موبایل و رمز یک‌بار مصرف
                         </div>
                       </div>
                     </button>

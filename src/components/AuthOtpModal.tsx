@@ -6,7 +6,6 @@ import {
   Smartphone,
   MessageSquareText,
   Pencil,
-  Sparkles,
   CheckCircle2,
   ShieldCheck,
   ArrowRight,
@@ -22,29 +21,21 @@ import { UserRole } from '@/types/platform';
 
 interface AuthOtpModalProps {
   initialPhone?: string;
-  knownPhone?: string;
-  knownName?: string;
-  knownCity?: string;
+  availableCities?: { id: string; name: string; province: string }[];
+  availableCategories?: { id: string; name: string; emoji: string; showInSidebar?: boolean }[];
   onCompleteAuth: (payload: {
     phone: string;
     name: string;
     city: string;
+    accountType?: string;
     role: UserRole;
     preferredCategories: string[];
     isNewUser: boolean;
     isVerified?: boolean;
     sessionId?: string;
+    onboardingCompleted: boolean;
   }) => void;
   onClose: () => void;
-}
-
-function generateRandomSixDigitCode(): string {
-  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
-    const arr = new Uint32Array(1);
-    window.crypto.getRandomValues(arr);
-    return String(100000 + (arr[0] % 900000));
-  }
-  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 function formatMaskedIranPhone(digits: string): string {
@@ -58,12 +49,25 @@ function formatMaskedIranPhone(digits: string): string {
 
 export default function AuthOtpModal({
   initialPhone = '',
-  knownPhone = '09123456789',
-  knownName = 'علی فیروزی',
-  knownCity = 'تهران',
+  availableCities,
+  availableCategories,
   onCompleteAuth,
   onClose,
 }: AuthOtpModalProps) {
+  const cityOptions =
+    availableCities && availableCities.length > 0
+      ? availableCities
+      : CITIES.map((c) => ({ id: c.id, name: c.name, province: c.province }));
+  const categoryOptions =
+    availableCategories && availableCategories.length > 0
+      ? availableCategories
+      : CATEGORIES.filter((c) => c.showInSidebar).map((c) => ({
+          id: c.id,
+          name: c.name,
+          emoji: c.emoji,
+          showInSidebar: c.showInSidebar,
+        }));
+
   const [step, setStep] = useState<'phone' | 'otp' | 'onboarding'>('phone');
   const [phoneDigits, setPhoneDigits] = useState<string>(
     normalizeDigits(initialPhone).replace(/\D/g, '').slice(0, 11)
@@ -71,39 +75,28 @@ export default function AuthOtpModal({
   const [phoneError, setPhoneError] = useState<string>('');
   const [showTerms, setShowTerms] = useState<'tos' | 'privacy' | null>(null);
 
-  // OTP states
-  const [generatedOtp, setGeneratedOtp] = useState<string>('');
-  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  // Real Melipayamak OTP state (4..12 digits)
+  const [otpInput, setOtpInput] = useState<string>('');
   const [otpError, setOtpError] = useState<string>('');
   const [otpSuccessFlash, setOtpSuccessFlash] = useState<boolean>(false);
-  const [resendSeconds, setResendSeconds] = useState<number>(120);
+  const [resendSeconds, setResendSeconds] = useState<number>(180);
   const [isRequestingOtp, setIsRequestingOtp] = useState<boolean>(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState<boolean>(false);
   const [isSavingOnboarding, setIsSavingOnboarding] = useState<boolean>(false);
-  const [serverOtpMode, setServerOtpMode] = useState<boolean>(false);
+  const [onboardingError, setOnboardingError] = useState<string>('');
   const [verifiedServerUser, setVerifiedServerUser] = useState<{
-    sessionId?: string;
-    isVerified?: boolean;
-    role?: UserRole;
+    sessionId: string;
+    isVerified: boolean;
+    role: UserRole;
   } | null>(null);
 
-  // Onboarding states (for brand-new mobile numbers)
+  // Onboarding state (shown ONLY on first login when onboardingCompleted === false)
   const [fullName, setFullName] = useState<string>('');
-  const [city, setCity] = useState<string>(knownCity || 'تهران');
-  const [accountType, setAccountType] = useState<'user' | 'business'>('user');
-  const [preferredCategories, setPreferredCategories] = useState<string[]>([
-    'املاک',
-    'وسایل نقلیه',
-  ]);
+  const [city, setCity] = useState<string>(cityOptions[0]?.name || 'تهران');
+  const [accountType, setAccountType] = useState<'PERSONAL' | 'BUSINESS'>('PERSONAL');
+  const [preferredCategories, setPreferredCategories] = useState<string[]>([]);
 
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const autoLoginTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (autoLoginTimerRef.current) clearTimeout(autoLoginTimerRef.current);
-    };
-  }, []);
+  const otpFieldRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (step !== 'otp' || resendSeconds <= 0) return;
@@ -116,7 +109,7 @@ export default function AuthOtpModal({
   useEffect(() => {
     if (step === 'otp') {
       setTimeout(() => {
-        inputRefs.current[0]?.focus();
+        otpFieldRef.current?.focus();
       }, 60);
     }
   }, [step]);
@@ -135,7 +128,7 @@ export default function AuthOtpModal({
     if (isRequestingOtp) return;
     const clean = normalizeDigits(targetPhone).replace(/\D/g, '').slice(0, 11);
     if (!/^09\d{9}$/.test(clean)) {
-      setPhoneError('شمارهٔ موبایل نامعتبر است (باید ۱۱ رقم و با ۰۹ شروع شود)');
+      setPhoneError('شمارهٔ موبایل نامعتبر است (باید ۱۱ رقم و با ۰۹ شروع شود).');
       return;
     }
 
@@ -143,63 +136,26 @@ export default function AuthOtpModal({
     setIsRequestingOtp(true);
     try {
       const res = await tahatorApi.requestOtp(clean);
-      setServerOtpMode(true);
-      setGeneratedOtp(res.demoCode || '');
-      setOtpDigits(['', '', '', '', '', '']);
+      setOtpInput('');
       setOtpError('');
       setOtpSuccessFlash(false);
-      setResendSeconds(res.expiresInSeconds || 120);
+      setResendSeconds(res.expiresInSeconds || 180);
       setStep('otp');
     } catch (err) {
-      if (err instanceof ApiClientError && err.status < 500 && err.status !== 404) {
+      if (err instanceof ApiClientError) {
         setPhoneError(err.message);
       } else {
-        // Offline / gateway fallback only when backend is temporarily unreachable
-        const nextCode = generateRandomSixDigitCode();
-        setServerOtpMode(false);
-        setGeneratedOtp(nextCode);
-        setOtpDigits(['', '', '', '', '', '']);
-        setOtpError('');
-        setOtpSuccessFlash(false);
-        setResendSeconds(120);
-        setStep('otp');
+        setPhoneError('ارسال پیامک کد تایید انجام نشد. لطفاً لحظاتی دیگر دوباره تلاش کنید.');
       }
     } finally {
       setIsRequestingOtp(false);
     }
   };
 
-  const finalizeVerifiedPhone = (cleanPhone: string) => {
-    const normalizedKnown = normalizeDigits(knownPhone).replace(/\D/g, '');
-    if (cleanPhone === normalizedKnown || cleanPhone === '09123456789') {
-      onCompleteAuth({
-        phone: cleanPhone,
-        name: cleanPhone === '09123456789' ? knownName || 'علی فیروزی' : knownName,
-        city: knownCity || 'تهران',
-        role: 'user',
-        preferredCategories: ['املاک', 'وسایل نقلیه', 'کالای دیجیتال'],
-        isNewUser: false,
-      });
-      onClose();
-      return;
-    }
-    setStep('onboarding');
-  };
-
-  const submitOtpVerification = async (entered: string) => {
-    if (entered.length !== 6) {
-      setOtpError('لطفاً هر ۶ رقم کد تایید را وارد کنید.');
-      return;
-    }
-
-    if (!serverOtpMode) {
-      if (entered !== generatedOtp) {
-        setOtpError('کد تایید واردشده اشتباه است. می‌توانید روی کد پیامکی بالا کلیک کنید.');
-        return;
-      }
-      setOtpError('');
-      setOtpSuccessFlash(true);
-      finalizeVerifiedPhone(phoneDigits);
+  const submitOtpVerification = async (rawCode: string) => {
+    const cleanCode = normalizeDigits(rawCode).replace(/\D/g, '').slice(0, 12);
+    if (cleanCode.length < 4 || cleanCode.length > 12) {
+      setOtpError('لطفاً کد تایید پیامکی (۴ تا ۱۲ رقم) را کامل وارد کنید.');
       return;
     }
 
@@ -209,33 +165,55 @@ export default function AuthOtpModal({
     try {
       const res = await tahatorApi.verifyOtp({
         phone: phoneDigits,
-        code: entered,
-        deviceLabel: 'مرورگر وب تهاتر آپ',
+        code: cleanCode,
+        deviceLabel: 'مرورگر وب تهاتر',
       });
       setOtpSuccessFlash(true);
       const primaryRole = (res.user.roles?.[0] as UserRole) || 'user';
-      const defaultPlaceholderName =
-        res.user.fullName.startsWith('کاربر ') && res.user.fullName.length <= 16;
 
-      if (defaultPlaceholderName && !res.user.isVerified) {
+      if (res.user.requiresOnboarding) {
         setVerifiedServerUser({
           sessionId: res.sessionId,
           isVerified: res.user.isVerified,
           role: primaryRole,
         });
+        const initialName =
+          res.user.fullName &&
+          res.user.fullName !== 'کاربر تهاتر' &&
+          res.user.fullName !== 'کاربر جدید' &&
+          res.user.fullName !== 'کاربر تهاتر آپ'
+            ? res.user.fullName
+            : '';
+        setFullName(initialName);
         setStep('onboarding');
         return;
+      }
+
+      let resolvedCity = cityOptions[0]?.name || 'تهران';
+      let resolvedPreferred: string[] = [];
+      let resolvedAccountType = res.user.accountType || 'PERSONAL';
+      try {
+        const profile = await tahatorApi.getMyProfile();
+        if (profile.city?.name) resolvedCity = profile.city.name;
+        if (Array.isArray(profile.preferredCategories)) {
+          resolvedPreferred = profile.preferredCategories;
+        }
+        if (profile.accountType) resolvedAccountType = profile.accountType;
+      } catch {
+        // Fallback smoothly if profile summary endpoint wasn't ready
       }
 
       onCompleteAuth({
         phone: res.user.phone,
         name: res.user.fullName,
-        city: knownCity || 'تهران',
+        city: resolvedCity,
+        accountType: resolvedAccountType,
         role: primaryRole,
-        preferredCategories: ['املاک', 'وسایل نقلیه', 'کالای دیجیتال'],
+        preferredCategories: resolvedPreferred,
         isNewUser: false,
         isVerified: res.user.isVerified,
         sessionId: res.sessionId,
+        onboardingCompleted: true,
       });
       onClose();
     } catch (err) {
@@ -249,60 +227,10 @@ export default function AuthOtpModal({
     }
   };
 
-  const verifyOtpCode = (digitsArray: string[]) => {
-    const entered = digitsArray.join('');
-    void submitOtpVerification(entered);
-  };
-
-  const handleClickSimulatedSmsCode = () => {
-    if (!generatedOtp || generatedOtp.length !== 6 || isVerifyingOtp) return;
-    const chars = generatedOtp.split('');
-    setOtpDigits(chars);
-    setOtpError('');
-    setOtpSuccessFlash(true);
-    if (autoLoginTimerRef.current) clearTimeout(autoLoginTimerRef.current);
-    autoLoginTimerRef.current = setTimeout(() => {
-      void submitOtpVerification(generatedOtp);
-    }, 280);
-  };
-
-  const handleOtpBoxChange = (idx: number, rawVal: string) => {
-    const clean = normalizeDigits(rawVal).replace(/\D/g, '');
-    if (clean.length > 1) {
-      // Handle multi-digit paste
-      const pasted = clean.slice(0, 6).split('');
-      const next = ['', '', '', '', '', ''];
-      pasted.forEach((ch, i) => {
-        next[i] = ch;
-      });
-      setOtpDigits(next);
-      setOtpError('');
-      const nextFocus = Math.min(5, pasted.length - 1);
-      inputRefs.current[nextFocus]?.focus();
-      return;
-    }
-    const next = [...otpDigits];
-    next[idx] = clean;
-    setOtpDigits(next);
-    setOtpError('');
-    if (clean && idx < 5) {
-      inputRefs.current[idx + 1]?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[idx] && idx > 0) {
-      inputRefs.current[idx - 1]?.focus();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      verifyOtpCode(otpDigits);
-    }
-  };
-
-  const formatTimer = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${toPersianDigits(String(m).padStart(2, '0'))}:${toPersianDigits(String(s).padStart(2, '0'))}`;
+  const handleOtpInputChange = (val: string) => {
+    const clean = normalizeDigits(val).replace(/\D/g, '').slice(0, 12);
+    setOtpInput(clean);
+    if (otpError) setOtpError('');
   };
 
   const togglePrefCategory = (catName: string) => {
@@ -311,33 +239,40 @@ export default function AuthOtpModal({
     );
   };
 
+  const mm = String(Math.floor(resendSeconds / 60));
+  const ss = String(resendSeconds % 60).padStart(2, '0');
+
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/55 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[460px] bg-[var(--surface-neutral-weaker)] rounded-[10px] shadow-2xl overflow-hidden flex flex-col max-h-[94dvh]"
+        className="bg-white rounded-[10px] shadow-2xl w-full max-w-[460px] overflow-hidden border border-[var(--border-neutral-weaker)] animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-neutral-weaker)]">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-5 h-5 text-[var(--brand-primary)]" />
+            <h2 className="text-[15px] font-bold text-[var(--content-neutral-strong)]">
+              {step === 'onboarding'
+                ? 'تکمیل مشخصات ورود اول'
+                : 'ورود با شماره موبایل'}
+            </h2>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-[var(--surface-neutral-weak)] flex items-center justify-center text-[var(--content-neutral-default)]"
-            aria-label="بستن پنجره ورود"
+            className="p-1.5 rounded hover:bg-[var(--surface-neutral-subtle)] text-[var(--content-neutral-default)]"
+            aria-label="بستن"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
-          <h3 className="text-[16px] font-bold text-[var(--content-neutral-stronger)]">
-            {step === 'onboarding' ? 'تکمیل پروفایل عضو جدید' : 'ورود یا عضویت با شماره موبایل'}
-          </h3>
-          <div className="w-8" />
         </div>
 
         {/* Body */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
+        <div className="p-5">
           {step === 'phone' && (
             <form
               onSubmit={(e) => {
@@ -346,84 +281,48 @@ export default function AuthOtpModal({
               }}
               className="space-y-4"
             >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] flex items-center justify-center shrink-0">
-                  <Smartphone className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-[15px] font-bold text-[var(--content-neutral-stronger)]">
-                    شمارهٔ موبایل خود را وارد کنید
-                  </h4>
-                  <p className="text-[12px] text-[var(--content-neutral-default)] mt-1 leading-6">
-                    برای مشاهده حساب کاربری، مدیریت آگهی‌ها، ثبت پیشنهاد معاوضه و اقساط ۵۰/۵۰ شماره موبایل خود را وارد کنید.
-                  </p>
-                </div>
+              <div>
+                <h3 className="text-[15px] font-bold text-[var(--content-neutral-strong)] mb-1">
+                  شمارهٔ موبایل خود را وارد کنید
+                </h3>
+                <p className="text-[12.5px] leading-6 text-[var(--content-neutral-default)]">
+                  برای ثبت آگهی، مدیریت «تهاتر من» و پیگیری پیشنهادهای معاوضه، کد یک‌بار مصرف از طریق پیامک به شماره شما ارسال می‌شود.
+                </p>
               </div>
 
               <div>
-                <div className="relative">
+                <div className="relative flex items-center" dir="ltr">
+                  <span className="absolute left-3 px-2 py-0.5 rounded bg-[var(--surface-neutral-subtle)] text-[12px] font-bold text-[var(--content-neutral-default)] border border-[var(--border-neutral-weaker)]">
+                    +۹۸
+                  </span>
                   <input
                     type="tel"
                     inputMode="numeric"
+                    autoFocus
                     dir="ltr"
-                    value={formatMaskedIranPhone(phoneDigits)}
+                    value={phoneDigits}
                     onChange={(e) => handlePhoneInputChange(e.target.value)}
-                    placeholder="۰۹۱۲ ۳۴۵ ۶۷۸۹"
-                    className={`w-full h-[46px] px-4 rounded-[6px] border text-center text-[16px] font-bold tracking-wider bg-white focus:outline-none transition-colors ${
-                      phoneError
-                        ? 'border-[var(--semantic-negative)] ring-2 ring-[var(--semantic-negative)]/15'
-                        : isPhoneValid
-                        ? 'border-[var(--semantic-positive)] ring-2 ring-[var(--semantic-positive)]/15'
-                        : 'border-[var(--border-neutral-weak)] focus:border-[var(--brand-action)]'
+                    placeholder="0912..."
+                    className={`kt-input !h-[46px] !pl-16 !pr-4 text-left font-bold tracking-[0.06em] text-[15px] ${
+                      phoneError ? '!border-[var(--brand-primary)]' : ''
                     }`}
                   />
                 </div>
                 {phoneError && (
-                  <p className="text-[12px] font-medium text-[var(--semantic-negative)] mt-1.5">
+                  <p className="text-[12px] text-[var(--brand-primary)] font-medium mt-1.5">
                     {phoneError}
                   </p>
                 )}
               </div>
 
-              {/* Quick Demo Phone Shortcuts */}
-              <div className="p-3 rounded-[8px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2">
-                <div className="text-[11px] font-bold text-[var(--content-neutral-default)] flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[var(--brand-action)]" />
-                  <span>شماره‌های آزمایشی سریع (حالت بدون پنل پیامک):</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhoneDigits('09123456789');
-                      setPhoneError('');
-                    }}
-                    className="px-2.5 py-1.5 rounded-[5px] bg-white border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[11px] font-medium text-[var(--content-neutral-stronger)] transition-colors"
-                  >
-                    حساب فعال: {toPersianDigits('09123456789')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhoneDigits('09357778899');
-                      setPhoneError('');
-                    }}
-                    className="px-2.5 py-1.5 rounded-[5px] bg-white border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] text-[11px] font-medium text-[var(--content-neutral-stronger)] transition-colors"
-                  >
-                    عضو جدید: {toPersianDigits('09357778899')}
-                  </button>
-                </div>
-              </div>
-
-              {/* Terms & Privacy Notice */}
-              <div className="text-[12px] text-[var(--content-neutral-default)] leading-6">
-                با ورود به تهاتر آپ،{' '}
+              <div className="text-[12px] leading-6 text-[var(--content-neutral-default)]">
+                ورود با کد یک‌بار مصرف به منزلهٔ پذیرش{' '}
                 <button
                   type="button"
                   onClick={() => setShowTerms(showTerms === 'tos' ? null : 'tos')}
                   className="text-[var(--brand-primary)] font-bold hover:underline"
                 >
-                  شرایط و قوانین استفاده
+                  شرایط استفاده از خدمات
                 </button>{' '}
                 و{' '}
                 <button
@@ -431,26 +330,29 @@ export default function AuthOtpModal({
                   onClick={() => setShowTerms(showTerms === 'privacy' ? null : 'privacy')}
                   className="text-[var(--brand-primary)] font-bold hover:underline"
                 >
-                  سیاست‌نامهٔ حریم خصوصی
+                  حریم خصوصی
                 </button>{' '}
-                را می‌پذیرم.
+                است.
               </div>
 
               {showTerms && (
-                <div className="p-3 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] text-[11px] leading-6 text-[var(--content-neutral-default)]">
+                <div className="p-3 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] text-[11.5px] leading-5 text-[var(--content-neutral-default)]">
                   {showTerms === 'tos'
-                    ? 'کاربران متعهد می‌شوند اطلاعات واقعی کالا یا ملک قابل معاوضه را ثبت کنند و تا زمان کارشناسی حضوری یا قرارداد رسمی از پرداخت بیعانه خارج از چهارچوب امن خودداری کنند.'
-                    : 'شماره موبایل شما صرفاً برای تایید هویت، محافظت از آگهی‌ها و نمایش اختیاری در معاملات استفاده می‌شود و بدون رضایت شما در چت نمایش داده نمی‌شود.'}
+                    ? 'شماره موبایل شما صرفاً برای ارسال رمز یک‌بار مصرف پیامکی، بازیابی آگهی‌های ثبت‌شده و امنیت معاملات تهاتر استفاده می‌شود.'
+                    : 'نشست شما با کوکی HttpOnly ایمن مدیریت می‌شود و در پیام‌رسان تهاتر، نمایش شماره تماس تحت کنترل تنظیمات حریم خصوصی شماست.'}
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={isRequestingOtp}
-                className="w-full kt-button--primary !h-[44px] text-[14px] font-bold disabled:opacity-70"
+                disabled={!isPhoneValid || isRequestingOtp}
+                className={`w-full !h-[44px] rounded-[6px] text-[14px] font-bold transition-colors ${
+                  isPhoneValid && !isRequestingOtp
+                    ? 'kt-button--primary'
+                    : 'bg-[var(--surface-neutral-subtle)] text-[var(--content-neutral-weak)] cursor-not-allowed'
+                }`}
               >
-                <span>{isRequestingOtp ? 'در حال ارسال کد...' : 'دریافت کد تایید پیامکی'}</span>
-                <ArrowRight className="w-4 h-4 rotate-180" />
+                {isRequestingOtp ? 'در حال ارسال پیامک کد تایید...' : 'ارسال رمز یک‌بار مصرف'}
               </button>
             </form>
           )}
@@ -459,134 +361,123 @@ export default function AuthOtpModal({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                verifyOtpCode(otpDigits);
+                void submitOtpVerification(otpInput);
               }}
               className="space-y-4"
             >
-              {/* Formatted Phone + Edit Button */}
-              <div className="p-3 rounded-[8px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <MessageSquareText className="w-4 h-4 text-[var(--brand-primary)]" />
-                  <span className="text-[14px] font-bold dir-ltr text-[var(--content-neutral-stronger)]">
-                    {formatMaskedIranPhone(phoneDigits)}
-                  </span>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-[15px] font-bold text-[var(--content-neutral-strong)] mb-1">
+                    کد تایید پیامکی را وارد کنید
+                  </h3>
+                  <p className="text-[12.5px] leading-6 text-[var(--content-neutral-default)]">
+                    رمز یک‌بار مصرف به شماره{' '}
+                    <span dir="ltr" className="font-bold text-[var(--content-neutral-strong)]">
+                      {formatMaskedIranPhone(phoneDigits)}
+                    </span>{' '}
+                    پیامک شد.
+                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setStep('phone')}
-                  className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--brand-primary)] hover:underline"
+                  onClick={() => {
+                    setStep('phone');
+                    setOtpError('');
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[6px] border border-[var(--border-neutral-weaker)] text-[11.5px] font-medium hover:bg-[var(--surface-neutral-subtle)]"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>ویرایش شماره</span>
+                  <Pencil className="w-3 h-3" />
+                  <span>تغییر شماره</span>
                 </button>
               </div>
 
-              <div className="text-[13px] text-[var(--content-neutral-stronger)]">
-                کد تایید ۶ رقمی به شمارهٔ بالا ارسال شد.
+              <div className="rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] p-3 flex items-center gap-2.5 text-[12px] text-[var(--content-neutral-default)]">
+                <MessageSquareText className="w-4 h-4 text-[var(--brand-primary)] shrink-0" />
+                <span>
+                  پیامک حاوی کد تایید ارسال شده است. پس از دریافت، کد عددی را در کادر زیر وارد کنید.
+                </span>
               </div>
 
-              {/* Simulated Incoming SMS Notification Box (Click-to-Fill & Login!) */}
-              {generatedOtp && (
-                <div className="p-3.5 rounded-[8px] border-2 border-[var(--semantic-positive)]/50 bg-[var(--semantic-positive-soft)]/70 space-y-2 shadow-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[var(--semantic-positive)]">
-                      <span className="w-2 h-2 rounded-full bg-[var(--semantic-positive)] animate-pulse" />
-                      <span>پیامک شبیه‌سازی‌شده تهاتر آپ (بدون پنل SMS)</span>
-                    </span>
-                    <span className="text-[10px] text-[var(--content-neutral-default)]">
-                      هم‌اکنون
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-[var(--content-neutral-stronger)]">
-                    کد ورود شما به تهاتر آپ آماده است. روی کادر زیر کلیک کنید تا کد خودکار جای‌گذاری و وارد شوید:
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleClickSimulatedSmsCode}
-                    data-testid="simulated-sms-code-btn"
-                    className="w-full py-2.5 px-3 rounded-[6px] bg-white hover:bg-[var(--semantic-positive)] hover:text-white border border-[var(--semantic-positive)] text-[var(--semantic-positive)] transition-all flex items-center justify-between gap-2 group shadow-sm"
-                  >
-                    <span className="text-[12px] font-bold">
-                      کلیک برای جای‌گذاری و ورود سریع
-                    </span>
-                    <span
-                      dir="ltr"
-                      className="px-3 py-0.5 rounded bg-[var(--semantic-positive-soft)] group-hover:bg-white/20 text-[16px] font-extrabold tracking-[0.22em]"
-                    >
-                      {toPersianDigits(generatedOtp)}
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {/* 6 Individual OTP Digit Boxes */}
-              <div dir="ltr" className="grid grid-cols-6 gap-2 pt-1">
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => {
-                      inputRefs.current[idx] = el;
-                    }}
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={digit ? toPersianDigits(digit) : ''}
-                    onChange={(e) => handleOtpBoxChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    aria-label={`رقم ${idx + 1} کد تایید`}
-                    className={`h-[48px] text-center text-[18px] font-extrabold rounded-[6px] border bg-white focus:outline-none transition-all ${
-                      otpError
-                        ? 'border-[var(--semantic-negative)] ring-2 ring-[var(--semantic-negative)]/15'
-                        : otpSuccessFlash
-                        ? 'border-[var(--semantic-positive)] bg-[var(--semantic-positive-soft)]/50 text-[var(--semantic-positive)]'
-                        : digit
-                        ? 'border-[var(--brand-action)]'
-                        : 'border-[var(--border-neutral-weak)] focus:border-[var(--brand-action)]'
-                    }`}
-                  />
-                ))}
+              <div>
+                <label className="block text-[12px] font-bold mb-1.5 text-[var(--content-neutral-strong)]">
+                  کد تایید ارسال‌شده:
+                </label>
+                <input
+                  ref={otpFieldRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  dir="ltr"
+                  maxLength={12}
+                  value={otpInput}
+                  onChange={(e) => handleOtpInputChange(e.target.value)}
+                  placeholder="مثلاً کد پیامک‌شده را وارد کنید"
+                  className={`kt-input !h-[52px] text-center text-[20px] font-bold tracking-[0.22em] ${
+                    otpError
+                      ? '!border-[var(--brand-primary)] bg-[#fff5f5]'
+                      : otpSuccessFlash
+                      ? '!border-[var(--semantic-positive)] bg-[var(--semantic-positive-soft)]'
+                      : ''
+                  }`}
+                />
               </div>
 
               {otpError && (
-                <p className="text-[12px] font-medium text-[var(--semantic-negative)]">
+                <p className="text-[12px] font-medium text-[var(--brand-primary)] text-center">
                   {otpError}
                 </p>
               )}
+
               {otpSuccessFlash && (
-                <p className="text-[12px] font-bold text-[var(--semantic-positive)] flex items-center gap-1.5">
+                <div className="flex items-center justify-center gap-1.5 text-[12.5px] font-bold text-[var(--semantic-positive)]">
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>کد تایید شد! در حال ورود به پروفایل کاربری...</span>
-                </p>
+                  <span>شماره با موفقیت تایید شد!</span>
+                </div>
               )}
 
-              {/* Resend timer row */}
-              <div className="flex items-center justify-between text-[12px]">
-                <span className="text-[var(--content-neutral-default)]">
-                  {resendSeconds > 0
-                    ? `ارسال مجدد کد تا ${formatTimer(resendSeconds)}`
-                    : 'امکان دریافت کد جدید فعال است'}
-                </span>
+              <div className="flex items-center justify-between text-[12px] pt-1">
+                {resendSeconds > 0 ? (
+                  <span className="text-[var(--content-neutral-default)]">
+                    ارسال مجدد کد تا{' '}
+                    <strong dir="ltr" className="text-[var(--content-neutral-strong)]">
+                      {toPersianDigits(mm)}:{toPersianDigits(ss)}
+                    </strong>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void issueNewOtpAndMove(phoneDigits)}
+                    disabled={isRequestingOtp}
+                    className="inline-flex items-center gap-1 text-[var(--brand-primary)] font-bold hover:underline"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRequestingOtp ? 'animate-spin' : ''}`} />
+                    <span>درخواست کد جدید</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  disabled={resendSeconds > 0 || isRequestingOtp}
-                  onClick={() => void issueNewOtpAndMove(phoneDigits)}
-                  className={`inline-flex items-center gap-1 font-bold ${
-                    resendSeconds > 0 || isRequestingOtp
-                      ? 'text-[var(--content-neutral-weak)] cursor-not-allowed'
-                      : 'text-[var(--brand-primary)] hover:underline'
-                  }`}
+                  onClick={() => {
+                    setStep('phone');
+                    setOtpError('');
+                  }}
+                  className="inline-flex items-center gap-1 text-[var(--content-neutral-default)] hover:text-[var(--content-neutral-strong)]"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>درخواست دوباره کد</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span>بازگشت</span>
                 </button>
               </div>
 
               <button
                 type="submit"
-                disabled={isVerifyingOtp}
-                className="w-full kt-button--primary !h-[44px] text-[14px] font-bold disabled:opacity-70"
+                disabled={otpInput.length < 4 || isVerifyingOtp}
+                className={`w-full !h-[44px] rounded-[6px] text-[14px] font-bold transition-colors ${
+                  otpInput.length >= 4 && !isVerifyingOtp
+                    ? 'kt-button--primary'
+                    : 'bg-[var(--surface-neutral-subtle)] text-[var(--content-neutral-weak)] cursor-not-allowed'
+                }`}
               >
-                {isVerifyingOtp ? 'در حال بررسی کد...' : 'تایید و ورود به حساب'}
+                {isVerifyingOtp ? 'در حال بررسی رمز یک‌بار مصرف...' : 'تایید و ورود'}
               </button>
             </form>
           )}
@@ -596,52 +487,68 @@ export default function AuthOtpModal({
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (isSavingOnboarding) return;
-                const finalName =
-                  fullName.trim() || `کاربر ${toPersianDigits(phoneDigits.slice(-4))}`;
-                const targetRole: UserRole =
-                  verifiedServerUser?.role || (accountType === 'business' ? 'business' : 'user');
-                if (serverOtpMode) {
-                  setIsSavingOnboarding(true);
-                  try {
-                    await tahatorApi.updateMyProfile({
-                      fullName: finalName,
-                      preferredCategories,
-                    });
-                  } catch {
-                    // keep flowing cleanly with optimistic profile even if non-critical field fails
-                  } finally {
-                    setIsSavingOnboarding(false);
-                  }
+                const trimmedName = fullName.trim();
+                if (trimmedName.length < 2) {
+                  setOnboardingError('لطفاً نام و نام خانوادگی خود را (حداقل ۲ حرف) وارد کنید.');
+                  return;
                 }
-                onCompleteAuth({
-                  phone: phoneDigits,
-                  name: finalName,
-                  city,
-                  role: targetRole,
-                  preferredCategories,
-                  isNewUser: true,
-                  isVerified: verifiedServerUser?.isVerified ?? false,
-                  sessionId: verifiedServerUser?.sessionId,
-                });
-                onClose();
+                setOnboardingError('');
+                setIsSavingOnboarding(true);
+                try {
+                  await tahatorApi.updateMyProfile({
+                    fullName: trimmedName,
+                    cityName: city,
+                    accountType,
+                    preferredCategories,
+                    completeOnboarding: true,
+                  });
+                  onCompleteAuth({
+                    phone: phoneDigits,
+                    name: trimmedName,
+                    city,
+                    accountType,
+                    role: verifiedServerUser?.role || 'user',
+                    preferredCategories,
+                    isNewUser: true,
+                    isVerified: verifiedServerUser?.isVerified ?? false,
+                    sessionId: verifiedServerUser?.sessionId,
+                    onboardingCompleted: true,
+                  });
+                  onClose();
+                } catch (err) {
+                  setOnboardingError(
+                    err instanceof ApiClientError
+                      ? err.message
+                      : 'ذخیره اطلاعات تکمیلی با خطا مواجه شد. لطفاً دوباره تلاش کنید.'
+                  );
+                } finally {
+                  setIsSavingOnboarding(false);
+                }
               }}
               className="space-y-4"
             >
               <div className="p-3 rounded-[8px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-bold flex items-center gap-2">
                 <UserCheck className="w-4 h-4 shrink-0" />
                 <span>
-                  شماره {formatMaskedIranPhone(phoneDigits)} با موفقیت تایید شد! پروفایل خود را سریع تنظیم کنید:
+                  شماره {formatMaskedIranPhone(phoneDigits)} تایید شد! این فرم فقط در اولین ورود شما نمایش داده می‌شود:
                 </span>
               </div>
 
               <div>
-                <label className="block text-[12px] font-bold mb-1">نام و نام خانوادگی</label>
+                <label className="block text-[12px] font-bold mb-1">
+                  نام و نام خانوادگی <span className="text-[var(--brand-primary)]">*</span>
+                </label>
                 <input
                   type="text"
+                  required
+                  autoFocus
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (onboardingError) setOnboardingError('');
+                  }}
                   placeholder="مثلاً: رضا کریمی"
-                  className="kt-input !h-[40px] text-[13px]"
+                  className="kt-input !h-[42px] text-[13px]"
                 />
               </div>
 
@@ -653,7 +560,7 @@ export default function AuthOtpModal({
                     onChange={(e) => setCity(e.target.value)}
                     className="kt-input !h-[40px] text-[13px] bg-white"
                   >
-                    {CITIES.map((c) => (
+                    {cityOptions.map((c) => (
                       <option key={c.id} value={c.name}>
                         {c.name} ({c.province})
                       </option>
@@ -666,9 +573,9 @@ export default function AuthOtpModal({
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setAccountType('user')}
+                      onClick={() => setAccountType('PERSONAL')}
                       className={`h-[40px] px-2 rounded-[6px] border text-[12px] font-medium flex items-center justify-center gap-1 ${
-                        accountType === 'user'
+                        accountType === 'PERSONAL'
                           ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
                           : 'border-[var(--border-neutral-weaker)] bg-white'
                       }`}
@@ -678,9 +585,9 @@ export default function AuthOtpModal({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAccountType('business')}
+                      onClick={() => setAccountType('BUSINESS')}
                       className={`h-[40px] px-2 rounded-[6px] border text-[12px] font-medium flex items-center justify-center gap-1 ${
-                        accountType === 'business'
+                        accountType === 'BUSINESS'
                           ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)] font-bold'
                           : 'border-[var(--border-neutral-weaker)] bg-white'
                       }`}
@@ -694,10 +601,10 @@ export default function AuthOtpModal({
 
               <div>
                 <label className="block text-[12px] font-bold mb-1.5">
-                  علاقه‌مندی‌های شما برای پیشنهادهای هوشمند تهاتر (اختیاری):
+                  دسته‌بندی‌های مورد علاقه برای تهاتر (اختیاری):
                 </label>
                 <div className="flex flex-wrap gap-1.5">
-                  {CATEGORIES.filter((c) => c.showInSidebar).map((cat) => {
+                  {categoryOptions.map((cat) => {
                     const active = preferredCategories.includes(cat.name);
                     return (
                       <button
@@ -717,37 +624,21 @@ export default function AuthOtpModal({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={isSavingOnboarding}
-                  className="flex-1 kt-button--primary !h-[42px] text-[13px] font-bold disabled:opacity-70"
-                >
-                  {isSavingOnboarding
-                    ? 'در حال ذخیره پروفایل...'
-                    : 'تکمیل عضویت و ورود به پروفایل'}
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingOnboarding}
-                  onClick={() => {
-                    onCompleteAuth({
-                      phone: phoneDigits,
-                      name: fullName.trim() || `کاربر ${toPersianDigits(phoneDigits.slice(-4))}`,
-                      city,
-                      role: verifiedServerUser?.role || 'user',
-                      preferredCategories,
-                      isNewUser: true,
-                      isVerified: verifiedServerUser?.isVerified ?? false,
-                      sessionId: verifiedServerUser?.sessionId,
-                    });
-                    onClose();
-                  }}
-                  className="kt-button--outlined !h-[42px] !px-3.5 text-[12px]"
-                >
-                  ورود سریع
-                </button>
-              </div>
+              {onboardingError && (
+                <p className="text-[12px] text-[var(--brand-primary)] font-medium">
+                  {onboardingError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSavingOnboarding}
+                className="w-full kt-button--primary !h-[44px] text-[13px] font-bold disabled:opacity-70"
+              >
+                {isSavingOnboarding
+                  ? 'در حال ثبت اطلاعات...'
+                  : 'ثبت مشخصات و ورود به حساب کاربری'}
+              </button>
             </form>
           )}
         </div>
@@ -755,7 +646,7 @@ export default function AuthOtpModal({
         {/* Footer Security Badge */}
         <div className="px-5 py-3 bg-[var(--surface-neutral-subtle)] border-t border-[var(--border-neutral-weaker)] flex items-center justify-center gap-1.5 text-[11px] text-[var(--content-neutral-default)]">
           <ShieldCheck className="w-3.5 h-3.5 text-[var(--semantic-positive)]" />
-          <span>احراز هویت دو مرحله‌ای موبایل تهاتر آپ</span>
+          <span>ورود امن با رمز یک‌بار مصرف پیامکی (OTP)</span>
         </div>
       </div>
     </div>

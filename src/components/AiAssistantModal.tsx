@@ -211,7 +211,7 @@ export default function AiAssistantModal({
                           className="p-2 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] flex items-center gap-2.5 text-right transition-colors"
                         >
                           <img
-                            src={ad.images[0] || '/ads/fake-1.svg'}
+                            src={ad.images[0] || '/ads/no-image.svg'}
                             alt={ad.title}
                             className="w-11 h-11 rounded-[4px] object-cover shrink-0"
                           />
@@ -531,7 +531,7 @@ export default function AiAssistantModal({
                         className="p-2.5 rounded-[6px] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] bg-[var(--surface-neutral-subtle)] text-right flex items-center gap-2.5 transition-colors"
                       >
                         <img
-                          src={node.item.images[0] || '/ads/fake-1.svg'}
+                          src={node.item.images[0] || '/ads/no-image.svg'}
                           alt={node.item.title}
                           className="w-11 h-11 rounded-[4px] object-cover shrink-0"
                         />

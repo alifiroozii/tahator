@@ -34,6 +34,7 @@ import RolePanelModal from '@/components/RolePanelModal';
 import AiAssistantModal from '@/components/AiAssistantModal';
 import MapFeedView from '@/components/MapFeedView';
 import { ApiClientError, BackendProfileResponse, tahatorApi } from '@/lib/apiClient';
+import { mapBackendListingToUi } from '@/lib/listingMapper';
 import {
   CategoriesModal,
   CityModal,
@@ -46,7 +47,6 @@ import {
 } from '@/components/Modals';
 import {
   CATEGORIES,
-  INITIAL_LISTINGS,
   Listing,
   toPersianDigits,
 } from '@/data/mockData';
@@ -124,61 +124,40 @@ const INITIAL_THREADS: ChatThread[] = [
       },
     ],
   },
-  {
-    id: 'seller-ad-2',
-    title: 'مشاورین تهاتر غرب (آپارتمان ستارخان)',
-    subtitle: 'آپارتمان ۵۰ متر شمال ستارخان معاوضه با خودرو',
-    messages: [
-      {
-        id: 'm2',
-        sender: 'other',
-        text: 'سلام، واحد آماده بازدید است. اگر خودروی پیشنهادی برای معاوضه دارید مشخصات آن را بفرستید.',
-        time: '۱۱:۳۰',
-      },
-    ],
-  },
 ];
 
-const INITIAL_LISTING_META: Record<string, ListingAnalyticsMeta> = {
-  'ad-1': {
-    moderationStatus: 'published',
-    views: 684,
-    contactClicks: 34,
-    chatClicks: 19,
-    expiryDays: 29,
-  },
-  'ad-2': {
-    moderationStatus: 'published',
-    views: 912,
-    contactClicks: 47,
-    chatClicks: 28,
-    isUrgent: true,
-    expiryDays: 27,
-  },
-};
+const INITIAL_LISTING_META: Record<string, ListingAnalyticsMeta> = {};
 
 export default function HomePage() {
-  const [listings, setListings] = useState<Listing[]>(INITIAL_LISTINGS);
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [isLoadingListings, setIsLoadingListings] = useState<boolean>(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [backendCities, setBackendCities] = useState<
+    { id: string; slug: string; name: string; province: string; isPopular: boolean; adCount: number }[]
+  >([]);
+  const [backendCategories, setBackendCategories] = useState<
+    { id: string; slug: string; name: string; emoji: string; sortOrder: number; showInSidebar: boolean }[]
+  >([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [sortBy, setSortBy] = useState<'newest' | 'cheapest' | 'expensive'>('newest');
   const [cardLayout, setCardLayout] = useState<'horizontal' | 'vertical'>('horizontal');
-  const [remainingCount, setRemainingCount] = useState<number>(130);
+  const [visibleCount, setVisibleCount] = useState<number>(24);
 
   // User Dashboard & Account State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [userRole, setUserRole] = useState<UserRole>('user');
-  const [myAdIds, setMyAdIds] = useState<string[]>(['ad-1', 'ad-2']);
+  const [myAdIds, setMyAdIds] = useState<string[]>([]);
   const [archivedAds, setArchivedAds] = useState<
     { listing: Listing; reason: string; archivedAt: string }[]
   >([]);
   const [listingMeta, setListingMeta] = useState<Record<string, ListingAnalyticsMeta>>(
     INITIAL_LISTING_META
   );
-  const [walletBalance, setWalletBalance] = useState<number>(330_000);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<WalletTransaction[]>(
     INITIAL_WALLET_TRANSACTIONS
   );
@@ -194,7 +173,7 @@ export default function HomePage() {
   const [sessions, setSessions] = useState<AuthSessionRecord[]>(INITIAL_AUTH_SESSIONS);
 
   // Bookmarks, Notes, Recent & Chat State
-  const [bookmarks, setBookmarks] = useState<string[]>(['ad-1', 'ad-2']);
+  const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [threads, setThreads] = useState<ChatThread[]>(INITIAL_THREADS);
@@ -236,6 +215,83 @@ export default function HomePage() {
     setTimeout(() => setToast(null), 3200);
   };
 
+  const resetGuestState = () => {
+    setIsLoggedIn(false);
+    setUserRole('user');
+    setUserProfile(DEFAULT_USER_PROFILE);
+    setMyAdIds([]);
+    setArchivedAds([]);
+    setWalletBalance(0);
+    setTransactions([]);
+    setSessions([]);
+    setNotifications([]);
+    try {
+      [
+        'tahator_auth_v2',
+        'tahator_role_v2',
+        'tahator_profile_v2',
+        'tahator_wallet_v2',
+        'tahator_tx_v2',
+        'tahator_sessions_v2',
+        'tahator_notifications_v2',
+        'tahator_user_ads',
+      ].forEach((k) => localStorage.removeItem(k));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const loadPublicCatalog = async () => {
+    setIsLoadingListings(true);
+    setCatalogError(null);
+    try {
+      const [metaRes, listingsRes] = await Promise.all([
+        tahatorApi.getListingsMeta().catch(() => null),
+        tahatorApi.getPublicListings({ limit: 250 }),
+      ]);
+      if (metaRes) {
+        if (Array.isArray(metaRes.cities) && metaRes.cities.length > 0) {
+          setBackendCities(metaRes.cities);
+        }
+        if (Array.isArray(metaRes.categories) && metaRes.categories.length > 0) {
+          setBackendCategories(metaRes.categories);
+        }
+      }
+      const mapped = (listingsRes.items || []).map(mapBackendListingToUi);
+      setListings((prev) => {
+        const mappedIds = new Set(mapped.map((m) => m.id));
+        const keptMine = prev.filter((item) => !mappedIds.has(item.id) && item.isUserCreated);
+        return [...keptMine, ...mapped];
+      });
+      setListingMeta((prev) => {
+        const next = { ...prev };
+        for (const rawItem of listingsRes.items || []) {
+          const st: AdModerationStatus =
+            rawItem.moderationStatus === 'PENDING_REVIEW'
+              ? 'pending'
+              : rawItem.moderationStatus === 'DRAFT' || rawItem.moderationStatus === 'ARCHIVED'
+              ? 'needs_edit'
+              : rawItem.moderationStatus === 'REJECTED'
+              ? 'rejected'
+              : 'published';
+          next[rawItem.id] = {
+            moderationStatus: st,
+            views: rawItem.viewsCount ?? prev[rawItem.id]?.views ?? 0,
+            contactClicks: prev[rawItem.id]?.contactClicks ?? 0,
+            chatClicks: prev[rawItem.id]?.chatClicks ?? 0,
+            isUrgent: Boolean(rawItem.isUrgent),
+            expiryDays: 30,
+          };
+        }
+        return next;
+      });
+    } catch {
+      setCatalogError('دریافت آگهی‌ها از سرور با خطا مواجه شد.');
+    } finally {
+      setIsLoadingListings(false);
+    }
+  };
+
   useEffect(() => {
     const readJsonSafe = <T,>(key: string, validate?: (val: unknown) => boolean): T | null => {
       try {
@@ -249,58 +305,80 @@ export default function HomePage() {
       }
     };
 
-    const savedAds = readJsonSafe<Listing[]>('tahator_user_ads', Array.isArray);
-    if (savedAds && savedAds.length > 0) {
-      setListings([...savedAds, ...INITIAL_LISTINGS]);
+    try {
+      localStorage.removeItem('tahator_user_ads');
+    } catch {
+      // ignore storage errors
     }
-
-    const savedBookmarks = readJsonSafe<string[]>('tahator_bookmarks', Array.isArray);
-    if (savedBookmarks) setBookmarks(savedBookmarks);
-
-    const savedNotes = readJsonSafe<Record<string, string>>(
-      'tahator_notes',
-      (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
-    );
-    if (savedNotes) setNotes(savedNotes);
-
-    const savedRecent = readJsonSafe<string[]>('tahator_recent', Array.isArray);
-    if (savedRecent) setRecentIds(savedRecent);
 
     const savedProfile = readJsonSafe<UserProfile>(
       'tahator_profile_v2',
       (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
     );
-    if (savedProfile) setUserProfile(savedProfile);
+    const hasStaleMockProfile =
+      savedProfile?.phone === '09123456789' || savedProfile?.name === 'علی فیروزی';
 
-    const savedAuth = readJsonSafe<boolean>('tahator_auth_v2', (v) => typeof v === 'boolean');
-    if (savedAuth === true) {
-      setIsLoggedIn(true);
+    if (hasStaleMockProfile) {
+      resetGuestState();
       try {
-        const rawRole = localStorage.getItem('tahator_role_v2');
-        if (rawRole) {
-          setUserRole(normalizeUserRole(rawRole));
-        }
+        localStorage.removeItem('tahator_bookmarks');
       } catch {
         // ignore storage errors
       }
     } else {
-      setUserRole('user');
+      const savedBookmarks = readJsonSafe<string[]>('tahator_bookmarks', Array.isArray);
+      if (savedBookmarks) setBookmarks(savedBookmarks);
+
+      const savedNotes = readJsonSafe<Record<string, string>>(
+        'tahator_notes',
+        (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+      );
+      if (savedNotes) setNotes(savedNotes);
+
+      const savedRecent = readJsonSafe<string[]>('tahator_recent', Array.isArray);
+      if (savedRecent) setRecentIds(savedRecent);
+
+      if (savedProfile) setUserProfile(savedProfile);
+
+      const savedAuth = readJsonSafe<boolean>('tahator_auth_v2', (v) => typeof v === 'boolean');
+      if (savedAuth === true) {
+        setIsLoggedIn(true);
+        try {
+          const rawRole = localStorage.getItem('tahator_role_v2');
+          if (rawRole) {
+            setUserRole(normalizeUserRole(rawRole));
+          }
+        } catch {
+          // ignore storage errors
+        }
+      } else {
+        setUserRole('user');
+      }
+
+      const savedWallet = readJsonSafe<number>(
+        'tahator_wallet_v2',
+        (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+      );
+      if (savedWallet !== null) setWalletBalance(savedWallet);
+
+      const savedTx = readJsonSafe<WalletTransaction[]>('tahator_tx_v2', Array.isArray);
+      if (savedTx) setTransactions(savedTx);
+
+      const savedOffers = readJsonSafe<BarterOffer[]>('tahator_offers_v2', Array.isArray);
+      if (savedOffers) setBarterOffers(savedOffers);
+
+      const savedSearchesLS = readJsonSafe<SavedSearch[]>('tahator_searches_v2', Array.isArray);
+      if (savedSearchesLS) setSavedSearches(savedSearchesLS);
+
+      const savedAssets = readJsonSafe<BarterAsset[]>('tahator_barter_assets_v2', Array.isArray);
+      if (savedAssets) setBarterAssets(savedAssets);
+
+      const savedNotifs = readJsonSafe<UserNotification[]>('tahator_notifications_v2', Array.isArray);
+      if (savedNotifs) setNotifications(savedNotifs);
+
+      const savedSessions = readJsonSafe<AuthSessionRecord[]>('tahator_sessions_v2', Array.isArray);
+      if (savedSessions && savedSessions.length > 0) setSessions(savedSessions);
     }
-
-    const savedWallet = readJsonSafe<number>(
-      'tahator_wallet_v2',
-      (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0
-    );
-    if (savedWallet !== null) setWalletBalance(savedWallet);
-
-    const savedTx = readJsonSafe<WalletTransaction[]>('tahator_tx_v2', Array.isArray);
-    if (savedTx) setTransactions(savedTx);
-
-    const savedOffers = readJsonSafe<BarterOffer[]>('tahator_offers_v2', Array.isArray);
-    if (savedOffers) setBarterOffers(savedOffers);
-
-    const savedSearchesLS = readJsonSafe<SavedSearch[]>('tahator_searches_v2', Array.isArray);
-    if (savedSearchesLS) setSavedSearches(savedSearchesLS);
 
     const savedAi = readJsonSafe<AiConfig>(
       'tahator_ai_config',
@@ -311,15 +389,7 @@ export default function HomePage() {
     const savedRecentSearch = readJsonSafe<string[]>('tahator_recent_searches', Array.isArray);
     if (savedRecentSearch) setRecentSearches(savedRecentSearch);
 
-    const savedAssets = readJsonSafe<BarterAsset[]>('tahator_barter_assets_v2', Array.isArray);
-    if (savedAssets) setBarterAssets(savedAssets);
-
-    const savedNotifs = readJsonSafe<UserNotification[]>('tahator_notifications_v2', Array.isArray);
-    if (savedNotifs) setNotifications(savedNotifs);
-
-    const savedSessions = readJsonSafe<AuthSessionRecord[]>('tahator_sessions_v2', Array.isArray);
-    if (savedSessions && savedSessions.length > 0) setSessions(savedSessions);
-
+    void loadPublicCatalog();
     void syncSessionFromBackend();
   }, []);
 
@@ -330,7 +400,9 @@ export default function HomePage() {
         ...prev,
         name: p.fullName || prev.name,
         phone: p.phone || prev.phone,
-        city: p.city?.name || prev.city,
+        city: p.city?.name || prev.city || 'تهران',
+        accountType: p.accountType || prev.accountType || 'PERSONAL',
+        onboardingCompleted: p.onboardingCompleted,
         isVerified: p.isVerified,
         iban: p.ibanMasked || prev.iban,
         simOwnershipRevoked: p.simOwnershipRevoked,
@@ -343,6 +415,7 @@ export default function HomePage() {
           p.preferredCategories && p.preferredCategories.length > 0
             ? p.preferredCategories
             : prev.preferredBarterCategories,
+        joinedAt: prev.joinedAt || 'فعال',
         lastLoginAt: 'هم‌اکنون',
       };
       persistSafe('tahator_profile_v2', next);
@@ -367,9 +440,11 @@ export default function HomePage() {
       const profile = await tahatorApi.getMyProfile();
       applyBackendProfile(profile);
 
-      const [walletData, sessionList] = await Promise.all([
+      const [walletData, sessionList, myListingsRes, archivedRes] = await Promise.all([
         tahatorApi.getMyWallet().catch(() => null),
         tahatorApi.getMySessions().catch(() => null),
+        tahatorApi.getMyListings().catch(() => null),
+        tahatorApi.getMyListings('archived').catch(() => null),
       ]);
 
       if (walletData) {
@@ -378,7 +453,7 @@ export default function HomePage() {
           setWalletBalance(bal);
           persistSafe('tahator_wallet_v2', bal);
         }
-        if (Array.isArray(walletData.transactions) && walletData.transactions.length > 0) {
+        if (Array.isArray(walletData.transactions)) {
           const mappedTx: WalletTransaction[] = walletData.transactions.map((tx) => ({
             id: tx.id,
             title: tx.titleFa,
@@ -392,7 +467,7 @@ export default function HomePage() {
         }
       }
 
-      if (sessionList && sessionList.length > 0) {
+      if (Array.isArray(sessionList)) {
         const mappedSessions: AuthSessionRecord[] = sessionList.map((s) => ({
           id: s.id,
           deviceLabel: s.deviceLabel,
@@ -404,10 +479,56 @@ export default function HomePage() {
         setSessions(mappedSessions);
         persistSafe('tahator_sessions_v2', mappedSessions);
       }
+
+      if (Array.isArray(myListingsRes)) {
+        const mappedMine = myListingsRes.map((item) => ({
+          ...mapBackendListingToUi(item),
+          isUserCreated: true,
+        }));
+        setMyAdIds(mappedMine.map((m) => m.id));
+        if (mappedMine.length > 0) {
+          setListings((prev) => {
+            const mineById = new Map(mappedMine.map((m) => [m.id, m]));
+            const rest = prev.filter((item) => !mineById.has(item.id));
+            return [...mappedMine, ...rest];
+          });
+          setListingMeta((prev) => {
+            const next = { ...prev };
+            for (const rawItem of myListingsRes) {
+              const st: AdModerationStatus =
+                rawItem.moderationStatus === 'PENDING_REVIEW'
+                  ? 'pending'
+                  : rawItem.moderationStatus === 'DRAFT' || rawItem.moderationStatus === 'ARCHIVED'
+                  ? 'needs_edit'
+                  : rawItem.moderationStatus === 'REJECTED'
+                  ? 'rejected'
+                  : 'published';
+              next[rawItem.id] = {
+                moderationStatus: st,
+                views: rawItem.viewsCount ?? prev[rawItem.id]?.views ?? 0,
+                contactClicks: prev[rawItem.id]?.contactClicks ?? 0,
+                chatClicks: prev[rawItem.id]?.chatClicks ?? 0,
+                isUrgent: Boolean(rawItem.isUrgent),
+                expiryDays: 30,
+              };
+            }
+            return next;
+          });
+        }
+      }
+
+      if (Array.isArray(archivedRes)) {
+        setArchivedAds(
+          archivedRes.map((item) => ({
+            listing: mapBackendListingToUi(item),
+            reason: 'آرشیوشده',
+            archivedAt: new Date(item.updatedAt || item.createdAt).toLocaleDateString('fa-IR'),
+          }))
+        );
+      }
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 401) {
-        setIsLoggedIn(false);
-        persistSafe('tahator_auth_v2', false);
+        resetGuestState();
         return;
       }
     }
@@ -488,27 +609,62 @@ export default function HomePage() {
   };
 
   const handleCreateListing = (newAd: Listing) => {
-    setListings((prev) => {
-      const next = [newAd, ...prev];
-      const userOnly = next.filter((item) => item.isUserCreated);
-      persistSafe('tahator_user_ads', userOnly);
-      return next;
-    });
-    setMyAdIds((prev) => [newAd.id, ...prev]);
-    setListingMeta((prev) => ({
-      ...prev,
-      [newAd.id]: {
-        moderationStatus: 'published',
-        views: 1,
-        contactClicks: 0,
-        chatClicks: 0,
-        expiryDays: 30,
-      },
-    }));
-    if (selectedCities.length > 0 && !selectedCities.includes(newAd.city)) {
-      setSelectedCities((prev) => [...prev, newAd.city]);
+    if (!isLoggedIn) {
+      triggerToast('برای ثبت آگهی ابتدا با شماره موبایل وارد شوید');
+      setShowPostAdModal(false);
+      setShowAuthModal(true);
+      return;
     }
-    triggerToast('آگهی شما با موفقیت در تهاتر آپ ثبت و منتشر شد!');
+
+    const matchedCategory = backendCategories.find((c) => c.name === newAd.category);
+    const matchedCity = backendCities.find((c) => c.name === newAd.city);
+    const safeDescription =
+      newAd.description && newAd.description.trim().length >= 5
+        ? newAd.description.trim()
+        : `${newAd.title} - قابل تهاتر در ${newAd.city}`;
+
+    void tahatorApi
+      .createListing({
+        categoryId: matchedCategory?.id,
+        categoryName: newAd.category,
+        subcategory: newAd.subcategory,
+        cityId: matchedCity?.id,
+        cityName: newAd.city,
+        neighborhood: newAd.neighborhood || 'مرکزی',
+        title: newAd.title,
+        description: safeDescription,
+        price: newAd.price || 0,
+        priceLabel: newAd.priceLabel,
+        hasExchange: newAd.hasExchange,
+        exchangeWith: newAd.exchangeWith,
+        hasInstallmentPlan: newAd.hasInstallmentPlan,
+        images: newAd.images,
+      })
+      .then((created) => {
+        const mappedCreated: Listing = {
+          ...mapBackendListingToUi(created),
+          isUserCreated: true,
+        };
+        setListings((prev) => [mappedCreated, ...prev.filter((i) => i.id !== mappedCreated.id)]);
+        setMyAdIds((prev) => [mappedCreated.id, ...prev.filter((id) => id !== mappedCreated.id)]);
+        setListingMeta((prev) => ({
+          ...prev,
+          [mappedCreated.id]: {
+            moderationStatus: 'published',
+            views: 1,
+            contactClicks: 0,
+            chatClicks: 0,
+            expiryDays: 30,
+          },
+        }));
+        if (selectedCities.length > 0 && !selectedCities.includes(mappedCreated.city)) {
+          setSelectedCities((prev) => [...prev, mappedCreated.city]);
+        }
+        triggerToast('آگهی شما با موفقیت در پایگاه‌داده ثبت و منتشر شد!');
+      })
+      .catch((err) => {
+        triggerToast(err instanceof ApiClientError ? err.message : 'ثبت آگهی با خطا مواجه شد.');
+      });
   };
 
   const handleEditAd = (
@@ -521,8 +677,8 @@ export default function HomePage() {
       description: string;
     }
   ) => {
-    setListings((prev) => {
-      const next = prev.map((item) =>
+    setListings((prev) =>
+      prev.map((item) =>
         item.id === id
           ? {
               ...item,
@@ -534,17 +690,17 @@ export default function HomePage() {
               description: updates.description,
             }
           : item
-      );
-      persistSafe(
-        'tahator_user_ads',
-        next.filter((i) => i.isUserCreated)
-      );
-      return next;
-    });
+      )
+    );
     triggerToast('تغییرات آگهی با موفقیت ذخیره شد');
   };
 
   const handleDeleteUserAd = (id: string, reason?: string) => {
+    if (isLoggedIn) {
+      void tahatorApi.archiveMyListing(id, reason || 'حذف‌شده توسط کاربر').catch((err) => {
+        if (err instanceof ApiClientError) triggerToast(err.message);
+      });
+    }
     const target = listings.find((item) => item.id === id);
     if (target) {
       setArchivedAds((prev) => [
@@ -552,14 +708,7 @@ export default function HomePage() {
         ...prev.filter((a) => a.listing.id !== id),
       ]);
     }
-    setListings((prev) => {
-      const next = prev.filter((item) => item.id !== id);
-      persistSafe(
-        'tahator_user_ads',
-        next.filter((item) => item.isUserCreated)
-      );
-      return next;
-    });
+    setListings((prev) => prev.filter((item) => item.id !== id));
     setMyAdIds((prev) => prev.filter((x) => x !== id));
     triggerToast(
       reason ? `آگهی به آرشیو منتقل شد (${reason})` : 'آگهی به آرشیو منتقل شد'
@@ -569,15 +718,13 @@ export default function HomePage() {
   const handleRestoreArchivedAd = (id: string) => {
     const archivedItem = archivedAds.find((a) => a.listing.id === id);
     if (!archivedItem) return;
+    if (isLoggedIn) {
+      void tahatorApi.restoreMyListing(id).catch((err) => {
+        if (err instanceof ApiClientError) triggerToast(err.message);
+      });
+    }
     const restored: Listing = { ...archivedItem.listing, publishedAt: 'لحظاتی پیش' };
-    setListings((prev) => {
-      const next = [restored, ...prev.filter((l) => l.id !== id)];
-      persistSafe(
-        'tahator_user_ads',
-        next.filter((item) => item.isUserCreated)
-      );
-      return next;
-    });
+    setListings((prev) => [restored, ...prev.filter((l) => l.id !== id)]);
     setMyAdIds((prev) => (prev.includes(id) ? prev : [id, ...prev]));
     setArchivedAds((prev) => prev.filter((a) => a.listing.id !== id));
     triggerToast('آگهی از آرشیو بازنشر شد');
@@ -621,75 +768,75 @@ export default function HomePage() {
     applyLocal();
   };
 
-  const chargeWalletIfPossible = (title: string, fee: number): boolean => {
-    if (walletBalance < fee) {
-      triggerToast('موجودی کیف پول کافی نیست؛ ابتدا کیف پول را شارژ کنید');
-      return false;
-    }
-    const newTx: WalletTransaction = {
-      id: `tx-${Date.now()}`,
-      title,
-      amount: fee,
-      type: 'debit',
-      date: 'امروز',
-      status: 'موفق',
-    };
-    setWalletBalance((prev) => {
-      const next = prev - fee;
-      persistSafe('tahator_wallet_v2', next);
-      return next;
-    });
-    setTransactions((prev) => {
-      const next = [newTx, ...prev];
-      persistSafe('tahator_tx_v2', next);
-      return next;
-    });
-    return true;
-  };
-
   const handleLadderAd = (id: string) => {
     const target = listings.find((i) => i.id === id);
     if (!target) return;
-    if (!chargeWalletIfPossible(`نردبان آگهی: ${target.title}`, tariffs.ladderFee)) {
+    if (!isLoggedIn) {
+      triggerToast('برای نردبان آگهی ابتدا با شماره موبایل وارد شوید');
+      setShowAuthModal(true);
       return;
     }
-    setListings((prev) => {
-      const updated = { ...target, badge: 'نردبان شده' as const, publishedAt: 'لحظاتی پیش' };
-      return [updated, ...prev.filter((i) => i.id !== id)];
-    });
-    triggerToast('آگهی نردبان شد و در صدر فهرست قرار گرفت');
+    void tahatorApi
+      .upgradeMyListing(id, 'ladder')
+      .then(() => {
+        const updated = { ...target, badge: 'نردبان شده' as const, publishedAt: 'لحظاتی پیش' };
+        setListings((prev) => [updated, ...prev.filter((i) => i.id !== id)]);
+        void syncSessionFromBackend();
+        triggerToast('آگهی نردبان شد و در صدر فهرست قرار گرفت');
+      })
+      .catch((err) => {
+        triggerToast(
+          err instanceof ApiClientError
+            ? err.message
+            : 'نردبان آگهی انجام نشد؛ لطفاً موجودی کیف پول را بررسی کنید'
+        );
+      });
   };
 
   const handleUrgentAd = (id: string) => {
     const target = listings.find((i) => i.id === id);
     if (!target) return;
-    if (!chargeWalletIfPossible(`ثبت نشان فوری: ${target.title}`, tariffs.urgentFee)) {
+    if (!isLoggedIn) {
+      triggerToast('برای ثبت نشان فوری ابتدا با شماره موبایل وارد شوید');
+      setShowAuthModal(true);
       return;
     }
-    setListings((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, isUrgent: true, badge: 'فوری' } : i))
-    );
-    setListingMeta((prev) => {
-      const cur = prev[id] || {
-        moderationStatus: 'published' as AdModerationStatus,
-        views: 250,
-        contactClicks: 15,
-        chatClicks: 9,
-        expiryDays: 29,
-      };
-      return { ...prev, [id]: { ...cur, isUrgent: true } };
-    });
-    triggerToast('نشان «فوری» برای آگهی فعال شد');
+    void tahatorApi
+      .upgradeMyListing(id, 'urgent')
+      .then(() => {
+        setListings((prev) =>
+          prev.map((i) => (i.id === id ? { ...i, isUrgent: true, badge: 'فوری' } : i))
+        );
+        setListingMeta((prev) => {
+          const cur = prev[id] || {
+            moderationStatus: 'published' as AdModerationStatus,
+            views: 0,
+            contactClicks: 0,
+            chatClicks: 0,
+            expiryDays: 30,
+          };
+          return { ...prev, [id]: { ...cur, isUrgent: true } };
+        });
+        void syncSessionFromBackend();
+        triggerToast('نشان «فوری» برای آگهی فعال شد');
+      })
+      .catch((err) => {
+        triggerToast(
+          err instanceof ApiClientError
+            ? err.message
+            : 'ثبت نشان فوری انجام نشد؛ لطفاً موجودی کیف پول را بررسی کنید'
+        );
+      });
   };
 
   const handleRenewAd = (id: string) => {
     setListingMeta((prev) => {
       const cur = prev[id] || {
         moderationStatus: 'published' as AdModerationStatus,
-        views: 250,
-        contactClicks: 15,
-        chatClicks: 9,
-        expiryDays: 28,
+        views: 0,
+        contactClicks: 0,
+        chatClicks: 0,
+        expiryDays: 30,
       };
       return { ...prev, [id]: { ...cur, expiryDays: 30 } };
     });
@@ -700,18 +847,8 @@ export default function HomePage() {
   };
 
   const handleLoadMore = () => {
-    if (remainingCount <= 0) return;
-    const batchCount = Math.min(6, remainingCount);
-    const nextBatch: Listing[] = INITIAL_LISTINGS.slice(0, batchCount).map((item, idx) => ({
-      ...item,
-      id: `more-${listings.length + idx}`,
-      code: `TH-${listings.length + idx + 1}`,
-      publishedAt: '۱۴۰۵/۸/۱۹',
-      timeCategory: '3months',
-    }));
-    setListings((prev) => [...prev, ...nextBatch]);
-    setRemainingCount((prev) => Math.max(0, prev - batchCount));
-    triggerToast(`${toPersianDigits(batchCount)} آگهی بیشتر نمایش داده شد`);
+    setVisibleCount((prev) => prev + 24);
+    triggerToast('آگهی‌های بیشتری نمایش داده شد');
   };
 
   const handleOpenChatWith = (
@@ -847,7 +984,7 @@ export default function HomePage() {
       direction: 'sent',
       listingId: payload.listing.id,
       listingTitle: payload.listing.title,
-      listingImage: payload.listing.images[0] || '/ads/fake-1.svg',
+      listingImage: payload.listing.images[0] || '/ads/no-image.svg',
       listingPrice: targetPrice,
       offeredItemTitle: payload.offeredItemTitle,
       offeredEstimatedPrice: payload.offeredEstimatedPrice,
@@ -986,6 +1123,13 @@ export default function HomePage() {
     return list;
   }, [listings, selectedCities, filters, searchQuery, sortBy]);
 
+  const displayedListings = useMemo(
+    () => filteredListings.slice(0, visibleCount),
+    [filteredListings, visibleCount]
+  );
+
+  const remainingCount = Math.max(0, filteredListings.length - displayedListings.length);
+
   const cityStatusText =
     selectedCities.length === 0
       ? 'هیچ شهری انتخاب نشده'
@@ -1071,10 +1215,7 @@ export default function HomePage() {
           onOpenAuthModal={() => setShowAuthModal(true)}
           onLogout={() => {
             void tahatorApi.logout().catch(() => {});
-            setIsLoggedIn(false);
-            setUserRole('user');
-            persistSafe('tahator_auth_v2', false);
-            persistSafe('tahator_role_v2', 'user');
+            resetGuestState();
             triggerToast('از حساب کاربری خارج شدید');
           }}
           onUpdateProfile={(partial) => {
@@ -1715,7 +1856,42 @@ export default function HomePage() {
           )}
 
           {/* 3-Column Listing Grid */}
-          {filteredListings.length === 0 ? (
+          {isLoadingListings && listings.length === 0 ? (
+            <div
+              className={
+                cardLayout === 'horizontal'
+                  ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[16px]'
+                  : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[16px]'
+              }
+            >
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="h-[152px] rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] animate-pulse p-3.5 flex justify-between gap-3"
+                >
+                  <div className="flex-1 space-y-2.5">
+                    <div className="h-4 w-3/4 rounded bg-[var(--surface-neutral-weak)]" />
+                    <div className="h-3 w-1/2 rounded bg-[var(--surface-neutral-weak)]" />
+                    <div className="h-3 w-2/3 rounded bg-[var(--surface-neutral-weak)] mt-6" />
+                  </div>
+                  <div className="w-[104px] h-[104px] sm:w-[124px] sm:h-[124px] rounded-[4px] bg-[var(--surface-neutral-weak)] shrink-0" />
+                </div>
+              ))}
+            </div>
+          ) : catalogError && listings.length === 0 ? (
+            <div className="py-14 px-4 text-center border border-dashed border-[var(--border-neutral-weaker)] rounded-[8px] space-y-3">
+              <p className="text-[15px] font-bold text-[var(--content-neutral-stronger)]">
+                {catalogError}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadPublicCatalog()}
+                className="kt-button--primary"
+              >
+                تلاش مجدد
+              </button>
+            </div>
+          ) : filteredListings.length === 0 ? (
             <div className="py-16 px-4 text-center border border-dashed border-[var(--border-neutral-weaker)] rounded-[8px] space-y-3">
               <p className="text-[16px] font-bold text-[var(--content-neutral-stronger)]">
                 متأسفانه آگهی منطبق با فیلترهای شما پیدا نشد.
@@ -1752,7 +1928,7 @@ export default function HomePage() {
                     : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[16px]'
                 }
               >
-                {filteredListings.map((item) => (
+                {displayedListings.map((item) => (
                   <PostCard
                     key={item.id}
                     listing={item}
@@ -2015,23 +2191,34 @@ export default function HomePage() {
         />
       )}
 
-      {/* Mobile OTP Registration / Login Modal */}
+      {/* Mobile OTP Unified Login Modal */}
       {showAuthModal && (
         <AuthOtpModal
           initialPhone={isLoggedIn ? userProfile.phone : ''}
-          knownPhone={userProfile.phone}
-          knownName={userProfile.name}
-          knownCity={userProfile.city || 'تهران'}
-          onCompleteAuth={({ phone, name, city, role, preferredCategories, isNewUser, isVerified }) => {
+          availableCities={backendCities}
+          availableCategories={backendCategories}
+          onCompleteAuth={({
+            phone,
+            name,
+            city,
+            accountType,
+            role,
+            preferredCategories,
+            isNewUser,
+            isVerified,
+            onboardingCompleted,
+          }) => {
             const nextProfile: UserProfile = {
               ...userProfile,
               name,
               phone,
               city,
+              accountType: accountType || userProfile.accountType || 'PERSONAL',
+              onboardingCompleted,
               isVerified: isVerified ?? userProfile.isVerified,
               preferredBarterCategories: preferredCategories,
               lastLoginAt: 'هم‌اکنون',
-              joinedAt: isNewUser ? 'امروز' : userProfile.joinedAt,
+              joinedAt: isNewUser ? 'امروز' : userProfile.joinedAt || 'فعال',
             };
             const safeRole = normalizeUserRole(role);
             setUserProfile(nextProfile);
@@ -2064,7 +2251,7 @@ export default function HomePage() {
               id: `sess-${Date.now()}`,
               deviceLabel: 'ورود تاییدشده با موبایل (هم‌اکنون)',
               phoneMasked: masked,
-              loginMethod: 'کد تایید پیامکی ۶ رقمی',
+              loginMethod: 'رمز یک‌بار مصرف پیامکی',
               time: 'نشست فعال کنونی',
               isCurrent: true,
             };
@@ -2082,7 +2269,7 @@ export default function HomePage() {
             if (isNewUser) {
               const welcomeNotif: UserNotification = {
                 id: `notif-${Date.now()}`,
-                title: `خوش آمدید ${name}! حساب موبایل شما فعال شد`,
+                title: `خوش آمدید ${name}! ورود شما انجام شد`,
                 description:
                   'برای دریافت نشان سبز اعتماد و پیشنهادهای ۳ ضلعی دقیق‌تر، کد ملی و دارایی‌های آماده تهاتر خود را تکمیل کنید.',
                 type: 'ai',
@@ -2099,8 +2286,8 @@ export default function HomePage() {
             setDashboardTab('overview');
             setShowDashboardModal(true);
             triggerToast(
-              isNewUser
-                ? `عضویت شما با شماره ${toPersianDigits(phone)} با موفقیت تکمیل شد`
+              onboardingCompleted && isNewUser
+                ? `حساب شما با شماره ${toPersianDigits(phone)} آماده شد — خوش آمدید ${name}!`
                 : `خوش آمدید ${name}! ورود با موفقیت انجام شد`
             );
           }}

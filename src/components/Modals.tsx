@@ -325,15 +325,6 @@ interface PostAdModalProps {
   aiConfig?: AiConfig;
 }
 
-const SAMPLE_AD_IMAGES: Record<string, string[]> = {
-  املاک: ['/ads/fake-1.svg', '/ads/fake-2.svg'],
-  'وسایل نقلیه': ['/ads/fake-4.svg', '/ads/fake-6.svg'],
-  'کالای دیجیتال': ['/ads/fake-3.svg', '/ads/fake-7.svg'],
-  'خانه و آشپزخانه': ['/ads/fake-8.svg'],
-  'وسایل شخصی': ['/ads/fake-9.svg'],
-  'تجهیزات و صنعتی': ['/ads/fake-5.svg'],
-};
-
 export function PostAdModal({
   onCreateListing,
   onClose,
@@ -429,8 +420,7 @@ export function PostAdModal({
     }
 
     const cleanPrice = Number(normalizeDigits(price).replace(/[^\d]/g, '')) || 0;
-    const fallbackImages = SAMPLE_AD_IMAGES[category] || ['/ads/fake-2.svg'];
-    const finalImages = uploadedImages.length > 0 ? uploadedImages : [fallbackImages[0]];
+    const finalImages = uploadedImages;
 
     const newListing: Listing = {
       id: `ad-user-${Date.now()}`,
@@ -1390,12 +1380,13 @@ export function ChatModal({
 }
 
 /* -------------------------------------------------------------------------- */
-/* 6. My Tahator Modal (تهاتر من / آگهی‌های من / ثبت نام / نشان‌ها)         */
+/* 6. My Tahator Modal (تهاتر من / آگهی‌های من / نشان‌ها)                    */
 /* -------------------------------------------------------------------------- */
 interface MyTahatorModalProps {
   initialTab?: 'myAds' | 'bookmarks' | 'notes' | 'recent';
   user: { name: string; phone: string } | null;
-  onLogin: (user: { name: string; phone: string }) => void;
+  onLogin?: (user: { name: string; phone: string }) => void;
+  onOpenAuthModal?: () => void;
   onLogout: () => void;
   myAds: Listing[];
   bookmarkedAds: Listing[];
@@ -1410,7 +1401,7 @@ interface MyTahatorModalProps {
 export function MyTahatorModal({
   initialTab = 'myAds',
   user,
-  onLogin,
+  onOpenAuthModal,
   onLogout,
   myAds,
   bookmarkedAds,
@@ -1422,8 +1413,6 @@ export function MyTahatorModal({
   onClose,
 }: MyTahatorModalProps) {
   const [tab, setTab] = useState<'myAds' | 'bookmarks' | 'notes' | 'recent'>(initialTab);
-  const [nameInput, setNameInput] = useState('');
-  const [phoneInput, setPhoneInput] = useState('');
 
   useEffect(() => {
     setTab(initialTab);
@@ -1443,7 +1432,7 @@ export function MyTahatorModal({
         <div className="p-4 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <User className="w-5 h-5 text-[var(--brand-primary)]" />
-            <h3 className="text-[17px] font-bold">تهاتر من (آگهی‌های من و ثبت نام)</h3>
+            <h3 className="text-[17px] font-bold">تهاتر من (آگهی‌های من و نشان‌ها)</h3>
           </div>
           <button
             type="button"
@@ -1472,40 +1461,23 @@ export function MyTahatorModal({
               </button>
             </div>
           ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!phoneInput.trim()) return;
-                onLogin({
-                  name: nameInput.trim() || 'کاربر تهاتر آپ',
-                  phone: phoneInput.trim(),
-                });
-              }}
-              className="space-y-2.5"
-            >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="text-[13px] font-medium text-[var(--content-neutral-stronger)]">
-                برای مدیریت آگهی‌ها، ثبت آگهی و دسترسی به تهاتر من وارد شوید یا ثبت نام کنید:
+                برای مدیریت آگهی‌ها، ثبت آگهی و دسترسی به تهاتر من وارد حساب کاربری خود شوید:
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="نام و نام خانوادگی"
-                  className="kt-input !h-[36px] text-[13px]"
-                />
-                <input
-                  type="tel"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  placeholder="شماره موبایل (0912...)"
-                  className="kt-input !h-[36px] text-[13px] text-left dir-ltr"
-                />
-                <button type="submit" className="kt-button--primary !h-[36px] text-[13px]">
-                  ثبت نام / ورود
+              {onOpenAuthModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuthModal();
+                  }}
+                  className="kt-button--primary !h-[36px] text-[13px] shrink-0"
+                >
+                  ورود با شماره موبایل
                 </button>
-              </div>
-            </form>
+              )}
+            </div>
           )}
         </div>
 
@@ -1585,7 +1557,7 @@ export function MyTahatorModal({
                     className="flex items-center gap-3 min-w-0 cursor-pointer"
                   >
                     <img
-                      src={ad.images[0]}
+                      src={ad.images[0] || '/ads/no-image.svg'}
                       alt={ad.title}
                       className="w-14 h-14 rounded-[4px] object-cover shrink-0"
                     />

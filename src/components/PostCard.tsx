@@ -80,11 +80,18 @@ export default function PostCard({
             </div>
           )}
 
-          {listing.hasExchange && (
-            <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-[4px] bg-[var(--brand-action)] text-white text-[11px] font-bold flex items-center gap-1 shadow-sm">
-              <ArrowLeftRight className="w-3 h-3" />
-              <span>امکان معاوضه</span>
+          {listing.isTraded ? (
+            <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-[4px] bg-[var(--semantic-positive)] text-white text-[11px] font-bold flex items-center gap-1 shadow-sm">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>معامله شد</span>
             </span>
+          ) : (
+            listing.hasExchange && (
+              <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-[4px] bg-[var(--brand-action)] text-white text-[11px] font-bold flex items-center gap-1 shadow-sm">
+                <ArrowLeftRight className="w-3 h-3" />
+                <span>امکان معاوضه</span>
+              </span>
+            )
           )}
 
           <button
@@ -279,10 +286,16 @@ export default function PostCard({
           </div>
         )}
 
-        {listing.hasExchange && (
-          <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-[3px] bg-[var(--brand-action)]/95 text-white text-[10px] font-medium shadow-sm">
-            معاوضه
+        {listing.isTraded ? (
+          <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-[3px] bg-[var(--semantic-positive)]/95 text-white text-[10px] font-medium shadow-sm">
+            معامله شد
           </div>
+        ) : (
+          listing.hasExchange && (
+            <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-[3px] bg-[var(--brand-action)]/95 text-white text-10 font-medium shadow-sm">
+              معاوضه
+            </div>
+          )
         )}
       </div>
     </article>

@@ -159,7 +159,7 @@ export default function MapFeedView({
                     className="w-full p-2 rounded-[6px] border border-[var(--border-neutral-weaker)] hover:border-[var(--brand-action)] flex items-center gap-2.5 text-right transition-colors"
                   >
                     <img
-                      src={item.images[0] || '/ads/fake-1.svg'}
+                      src={item.images[0] || '/ads/no-image.svg'}
                       alt={item.title}
                       className="w-12 h-12 rounded-[4px] object-cover shrink-0"
                     />

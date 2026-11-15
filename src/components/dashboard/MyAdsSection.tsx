@@ -361,7 +361,7 @@ export default function MyAdsSection({
                         className="flex items-center gap-3 min-w-0 cursor-pointer"
                       >
                         <img
-                          src={ad.images[0] || '/ads/fake-1.svg'}
+                          src={ad.images[0] || '/ads/no-image.svg'}
                           alt={ad.title}
                           className="w-16 h-16 rounded-[6px] object-cover shrink-0 border border-[var(--border-neutral-weaker)]"
                         />
@@ -515,7 +515,7 @@ export default function MyAdsSection({
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <img
-                      src={entry.listing.images[0] || '/ads/fake-1.svg'}
+                      src={entry.listing.images[0] || '/ads/no-image.svg'}
                       alt={entry.listing.title}
                       className="w-14 h-14 rounded-[6px] object-cover opacity-75 shrink-0 border border-[var(--border-neutral-weaker)]"
                     />

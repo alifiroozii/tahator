@@ -126,7 +126,7 @@ export default function BookmarksNotesSection({
                         className="flex items-center gap-3 min-w-0 cursor-pointer"
                       >
                         <img
-                          src={ad.images[0] || '/ads/fake-1.svg'}
+                          src={ad.images[0] || '/ads/no-image.svg'}
                           alt={ad.title}
                           className="w-14 h-14 rounded-[4px] object-cover shrink-0 border border-[var(--border-neutral-weaker)]"
                         />

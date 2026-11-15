@@ -109,7 +109,7 @@ export default function AdDetailModal({
   const images =
     listing.images.length > 0
       ? listing.images
-      : ['/ads/fake-2.svg'];
+      : ['/ads/no-image.svg'];
 
   const handleCopyPhone = () => {
     navigator.clipboard?.writeText(listing.sellerPhone).catch(() => {});
@@ -238,6 +238,12 @@ export default function AdDetailModal({
 
               {/* Tahator Feature Badges */}
               <div className="mt-3 flex flex-wrap gap-2">
+                {listing.isTraded && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] bg-[var(--semantic-positive)] text-white text-[12px] font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>معامله شد</span>
+                  </span>
+                )}
                 {listing.hasExchange && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[12px] font-bold">
                     <ArrowLeftRight className="w-3.5 h-3.5" />
@@ -851,7 +857,7 @@ export default function AdDetailModal({
                       <div className="flex items-center justify-between gap-3 w-full">
                         <div className="flex items-center gap-3 min-w-0">
                           <img
-                            src={m.listing.images[0] || '/ads/fake-1.svg'}
+                            src={m.listing.images[0] || '/ads/no-image.svg'}
                             alt={m.listing.title}
                             className="w-11 h-11 rounded-[4px] object-cover shrink-0"
                           />
@@ -1090,7 +1096,7 @@ export default function AdDetailModal({
                   className="p-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right flex sm:flex-col gap-2.5 transition-all group"
                 >
                   <img
-                    src={rel.images[0] || '/ads/fake-1.svg'}
+                    src={rel.images[0] || '/ads/no-image.svg'}
                     alt={rel.title}
                     className="w-20 h-20 sm:w-full sm:h-28 rounded-[6px] object-cover shrink-0 bg-[var(--surface-neutral-weak)]"
                   />
