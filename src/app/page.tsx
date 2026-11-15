@@ -33,6 +33,7 @@ import AuthOtpModal from '@/components/AuthOtpModal';
 import RolePanelModal from '@/components/RolePanelModal';
 import AiAssistantModal from '@/components/AiAssistantModal';
 import MapFeedView from '@/components/MapFeedView';
+import { ApiClientError, BackendProfileResponse, tahatorApi } from '@/lib/apiClient';
 import {
   CategoriesModal,
   CityModal,
@@ -318,7 +319,99 @@ export default function HomePage() {
 
     const savedSessions = readJsonSafe<AuthSessionRecord[]>('tahator_sessions_v2', Array.isArray);
     if (savedSessions && savedSessions.length > 0) setSessions(savedSessions);
+
+    void syncSessionFromBackend();
   }, []);
+
+  const applyBackendProfile = (p: BackendProfileResponse) => {
+    const themeMap = { LIGHT: 'light', DARK: 'dark', SYSTEM: 'system' } as const;
+    setUserProfile((prev) => {
+      const next: UserProfile = {
+        ...prev,
+        name: p.fullName || prev.name,
+        phone: p.phone || prev.phone,
+        city: p.city?.name || prev.city,
+        isVerified: p.isVerified,
+        iban: p.ibanMasked || prev.iban,
+        simOwnershipRevoked: p.simOwnershipRevoked,
+        autoOfficialInvoice: p.autoOfficialInvoice,
+        uiTheme: themeMap[p.uiTheme] || prev.uiTheme,
+        personalizedFeed: p.personalizedFeed,
+        hidePhoneInChat: p.hidePhoneInChat,
+        allowCallHours: p.allowCallHours || prev.allowCallHours,
+        preferredBarterCategories:
+          p.preferredCategories && p.preferredCategories.length > 0
+            ? p.preferredCategories
+            : prev.preferredBarterCategories,
+        lastLoginAt: 'هم‌اکنون',
+      };
+      persistSafe('tahator_profile_v2', next);
+      return next;
+    });
+    if (p.wallet?.availableBalance !== undefined) {
+      const bal = Number(p.wallet.availableBalance);
+      if (Number.isFinite(bal)) {
+        setWalletBalance(bal);
+        persistSafe('tahator_wallet_v2', bal);
+      }
+    }
+    const primaryRole = normalizeUserRole(p.dashboards?.[0]?.roleCode);
+    setUserRole(primaryRole);
+    setIsLoggedIn(true);
+    persistSafe('tahator_auth_v2', true);
+    persistSafe('tahator_role_v2', primaryRole);
+  };
+
+  const syncSessionFromBackend = async () => {
+    try {
+      const profile = await tahatorApi.getMyProfile();
+      applyBackendProfile(profile);
+
+      const [walletData, sessionList] = await Promise.all([
+        tahatorApi.getMyWallet().catch(() => null),
+        tahatorApi.getMySessions().catch(() => null),
+      ]);
+
+      if (walletData) {
+        const bal = Number(walletData.availableBalance);
+        if (Number.isFinite(bal)) {
+          setWalletBalance(bal);
+          persistSafe('tahator_wallet_v2', bal);
+        }
+        if (Array.isArray(walletData.transactions) && walletData.transactions.length > 0) {
+          const mappedTx: WalletTransaction[] = walletData.transactions.map((tx) => ({
+            id: tx.id,
+            title: tx.titleFa,
+            amount: Number(tx.amount) || 0,
+            type: tx.txType === 'CREDIT' || tx.txType === 'ESCROW_RELEASE' ? 'credit' : 'debit',
+            date: new Date(tx.createdAt).toLocaleDateString('fa-IR'),
+            status: tx.status === 'COMPLETED' ? 'موفق' : 'در انتظار',
+          }));
+          setTransactions(mappedTx);
+          persistSafe('tahator_tx_v2', mappedTx);
+        }
+      }
+
+      if (sessionList && sessionList.length > 0) {
+        const mappedSessions: AuthSessionRecord[] = sessionList.map((s) => ({
+          id: s.id,
+          deviceLabel: s.deviceLabel,
+          phoneMasked: `${toPersianDigits(profile.phone.slice(0, 4))} *** ${toPersianDigits(profile.phone.slice(7))}`,
+          loginMethod: 'کوکی امن HttpOnly + OTP',
+          time: s.isCurrent ? 'نشست فعال کنونی' : new Date(s.lastUsedAt).toLocaleDateString('fa-IR'),
+          isCurrent: s.isCurrent,
+        }));
+        setSessions(mappedSessions);
+        persistSafe('tahator_sessions_v2', mappedSessions);
+      }
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status === 401) {
+        setIsLoggedIn(false);
+        persistSafe('tahator_auth_v2', false);
+        return;
+      }
+    }
+  };
 
   const handleRecordSearch = (term: string) => {
     const clean = term.trim();
@@ -491,25 +584,41 @@ export default function HomePage() {
   };
 
   const handleTopUpWallet = (amount: number) => {
-    const newTx: WalletTransaction = {
-      id: `tx-${Date.now()}`,
-      title: 'افزایش اعتبار کیف پول تهاتر آپ',
-      amount,
-      type: 'credit',
-      date: 'امروز',
-      status: 'موفق',
+    const applyLocal = (newBal?: number) => {
+      const newTx: WalletTransaction = {
+        id: `tx-${Date.now()}`,
+        title: 'افزایش اعتبار کیف پول تهاتر آپ',
+        amount,
+        type: 'credit',
+        date: 'امروز',
+        status: 'موفق',
+      };
+      setWalletBalance((prev) => {
+        const next = newBal !== undefined ? newBal : prev + amount;
+        persistSafe('tahator_wallet_v2', next);
+        return next;
+      });
+      setTransactions((prev) => {
+        const next = [newTx, ...prev];
+        persistSafe('tahator_tx_v2', next);
+        return next;
+      });
+      triggerToast('کیف پول با موفقیت شارژ شد');
     };
-    setWalletBalance((prev) => {
-      const next = prev + amount;
-      persistSafe('tahator_wallet_v2', next);
-      return next;
-    });
-    setTransactions((prev) => {
-      const next = [newTx, ...prev];
-      persistSafe('tahator_tx_v2', next);
-      return next;
-    });
-    triggerToast('کیف پول با موفقیت شارژ شد');
+
+    if (isLoggedIn) {
+      void tahatorApi
+        .topUpWallet(amount)
+        .then((res) => {
+          const parsed = Number(res.availableBalance);
+          applyLocal(Number.isFinite(parsed) ? parsed : undefined);
+        })
+        .catch(() => {
+          applyLocal();
+        });
+      return;
+    }
+    applyLocal();
   };
 
   const chargeWalletIfPossible = (title: string, fee: number): boolean => {
@@ -961,6 +1070,7 @@ export default function HomePage() {
           userRole={userRole}
           onOpenAuthModal={() => setShowAuthModal(true)}
           onLogout={() => {
+            void tahatorApi.logout().catch(() => {});
             setIsLoggedIn(false);
             setUserRole('user');
             persistSafe('tahator_auth_v2', false);
@@ -973,6 +1083,71 @@ export default function HomePage() {
               persistSafe('tahator_profile_v2', next);
               return next;
             });
+
+            if (!isLoggedIn) return;
+
+            if (partial.simOwnershipRevoked === true) {
+              void tahatorApi
+                .revokeSim(userProfile.phone)
+                .then(() => syncSessionFromBackend())
+                .catch((err) => {
+                  if (err instanceof ApiClientError) triggerToast(err.message);
+                });
+              return;
+            }
+
+            if (partial.nationalId && partial.nationalId.trim().length >= 10) {
+              void tahatorApi
+                .submitKyc({
+                  nationalId: partial.nationalId.trim(),
+                  iban: partial.iban?.trim() || undefined,
+                  fullName: partial.name?.trim() || undefined,
+                })
+                .then((res) => {
+                  setUserProfile((prev) => {
+                    const next = {
+                      ...prev,
+                      isVerified: res.isVerified,
+                      iban: res.ibanMasked || prev.iban,
+                    };
+                    persistSafe('tahator_profile_v2', next);
+                    return next;
+                  });
+                  triggerToast(res.message);
+                })
+                .catch((err) => {
+                  setUserProfile((prev) => {
+                    const reverted = { ...prev, isVerified: false };
+                    persistSafe('tahator_profile_v2', reverted);
+                    return reverted;
+                  });
+                  if (err instanceof ApiClientError) {
+                    triggerToast(err.message);
+                  }
+                });
+              return;
+            }
+
+            const patchPayload: Record<string, unknown> = {};
+            if (partial.name !== undefined) patchPayload.fullName = partial.name;
+            if (partial.autoOfficialInvoice !== undefined)
+              patchPayload.autoOfficialInvoice = partial.autoOfficialInvoice;
+            if (partial.uiTheme !== undefined)
+              patchPayload.uiTheme = partial.uiTheme.toUpperCase();
+            if (partial.personalizedFeed !== undefined)
+              patchPayload.personalizedFeed = partial.personalizedFeed;
+            if (partial.hidePhoneInChat !== undefined)
+              patchPayload.hidePhoneInChat = partial.hidePhoneInChat;
+            if (partial.allowCallHours !== undefined)
+              patchPayload.allowCallHours = partial.allowCallHours;
+            if (partial.preferredBarterCategories !== undefined)
+              patchPayload.preferredCategories = partial.preferredBarterCategories;
+
+            if (Object.keys(patchPayload).length > 0) {
+              void tahatorApi.updateMyProfile(patchPayload).catch((err) => {
+                if (err instanceof ApiClientError) triggerToast(err.message);
+              });
+            }
           }}
           onSwitchRole={handleSwitchRole}
           onOpenRolePanel={() => setShowRolePanelModal(true)}
@@ -1088,6 +1263,14 @@ export default function HomePage() {
           }}
           sessions={sessions}
           onRevokeOtherSessions={() => {
+            const staleIds = sessions.filter((s) => !s.isCurrent).map((s) => s.id);
+            if (isLoggedIn && staleIds.length > 0) {
+              staleIds.forEach((sid) => {
+                if (/^[0-9a-f-]{36}$/i.test(sid)) {
+                  void tahatorApi.revokeSession(sid).catch(() => {});
+                }
+              });
+            }
             setSessions((prev) => {
               const next = prev.filter((s) => s.isCurrent);
               persistSafe('tahator_sessions_v2', next);
@@ -1839,12 +2022,13 @@ export default function HomePage() {
           knownPhone={userProfile.phone}
           knownName={userProfile.name}
           knownCity={userProfile.city || 'تهران'}
-          onCompleteAuth={({ phone, name, city, role, preferredCategories, isNewUser }) => {
+          onCompleteAuth={({ phone, name, city, role, preferredCategories, isNewUser, isVerified }) => {
             const nextProfile: UserProfile = {
               ...userProfile,
               name,
               phone,
               city,
+              isVerified: isVerified ?? userProfile.isVerified,
               preferredBarterCategories: preferredCategories,
               lastLoginAt: 'هم‌اکنون',
               joinedAt: isNewUser ? 'امروز' : userProfile.joinedAt,
@@ -1856,6 +2040,7 @@ export default function HomePage() {
             persistSafe('tahator_profile_v2', nextProfile);
             persistSafe('tahator_auth_v2', true);
             persistSafe('tahator_role_v2', safeRole);
+            void syncSessionFromBackend();
 
             if (isNewUser) {
               const existingIdx = platformUsers.findIndex((u) => u.phone === phone);

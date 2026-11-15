@@ -1,0 +1,9 @@
+.git/
+node_modules/
+.next/
+.vercel/
+.env
+.env.*
+.liara/
+*.log
+.DS_Store

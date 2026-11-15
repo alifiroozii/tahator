@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, CITIES, toPersianDigits } from '@/data/mockData';
 import { normalizeDigits } from '@/lib/offlineAi';
+import { ApiClientError, tahatorApi } from '@/lib/apiClient';
 import { UserRole } from '@/types/platform';
 
 interface AuthOtpModalProps {
@@ -31,6 +32,8 @@ interface AuthOtpModalProps {
     role: UserRole;
     preferredCategories: string[];
     isNewUser: boolean;
+    isVerified?: boolean;
+    sessionId?: string;
   }) => void;
   onClose: () => void;
 }
@@ -74,6 +77,15 @@ export default function AuthOtpModal({
   const [otpError, setOtpError] = useState<string>('');
   const [otpSuccessFlash, setOtpSuccessFlash] = useState<boolean>(false);
   const [resendSeconds, setResendSeconds] = useState<number>(120);
+  const [isRequestingOtp, setIsRequestingOtp] = useState<boolean>(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState<boolean>(false);
+  const [isSavingOnboarding, setIsSavingOnboarding] = useState<boolean>(false);
+  const [serverOtpMode, setServerOtpMode] = useState<boolean>(false);
+  const [verifiedServerUser, setVerifiedServerUser] = useState<{
+    sessionId?: string;
+    isVerified?: boolean;
+    role?: UserRole;
+  } | null>(null);
 
   // Onboarding states (for brand-new mobile numbers)
   const [fullName, setFullName] = useState<string>('');
@@ -119,20 +131,42 @@ export default function AuthOtpModal({
     }
   };
 
-  const issueNewOtpAndMove = (targetPhone: string) => {
+  const issueNewOtpAndMove = async (targetPhone: string) => {
+    if (isRequestingOtp) return;
     const clean = normalizeDigits(targetPhone).replace(/\D/g, '').slice(0, 11);
     if (!/^09\d{9}$/.test(clean)) {
       setPhoneError('شمارهٔ موبایل نامعتبر است (باید ۱۱ رقم و با ۰۹ شروع شود)');
       return;
     }
+
     setPhoneError('');
-    const nextCode = generateRandomSixDigitCode();
-    setGeneratedOtp(nextCode);
-    setOtpDigits(['', '', '', '', '', '']);
-    setOtpError('');
-    setOtpSuccessFlash(false);
-    setResendSeconds(120);
-    setStep('otp');
+    setIsRequestingOtp(true);
+    try {
+      const res = await tahatorApi.requestOtp(clean);
+      setServerOtpMode(true);
+      setGeneratedOtp(res.demoCode || '');
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpError('');
+      setOtpSuccessFlash(false);
+      setResendSeconds(res.expiresInSeconds || 120);
+      setStep('otp');
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status < 500 && err.status !== 404) {
+        setPhoneError(err.message);
+      } else {
+        // Offline / gateway fallback only when backend is temporarily unreachable
+        const nextCode = generateRandomSixDigitCode();
+        setServerOtpMode(false);
+        setGeneratedOtp(nextCode);
+        setOtpDigits(['', '', '', '', '', '']);
+        setOtpError('');
+        setOtpSuccessFlash(false);
+        setResendSeconds(120);
+        setStep('otp');
+      }
+    } finally {
+      setIsRequestingOtp(false);
+    }
   };
 
   const finalizeVerifiedPhone = (cleanPhone: string) => {
@@ -152,31 +186,84 @@ export default function AuthOtpModal({
     setStep('onboarding');
   };
 
-  const verifyOtpCode = (digitsArray: string[]) => {
-    const entered = digitsArray.join('');
+  const submitOtpVerification = async (entered: string) => {
     if (entered.length !== 6) {
       setOtpError('لطفاً هر ۶ رقم کد تایید را وارد کنید.');
       return;
     }
-    if (entered !== generatedOtp) {
-      setOtpError('کد تایید واردشده اشتباه است. می‌توانید روی کد پیامکی بالا کلیک کنید.');
+
+    if (!serverOtpMode) {
+      if (entered !== generatedOtp) {
+        setOtpError('کد تایید واردشده اشتباه است. می‌توانید روی کد پیامکی بالا کلیک کنید.');
+        return;
+      }
+      setOtpError('');
+      setOtpSuccessFlash(true);
+      finalizeVerifiedPhone(phoneDigits);
       return;
     }
+
+    if (isVerifyingOtp) return;
+    setIsVerifyingOtp(true);
     setOtpError('');
-    setOtpSuccessFlash(true);
-    finalizeVerifiedPhone(phoneDigits);
+    try {
+      const res = await tahatorApi.verifyOtp({
+        phone: phoneDigits,
+        code: entered,
+        deviceLabel: 'مرورگر وب تهاتر آپ',
+      });
+      setOtpSuccessFlash(true);
+      const primaryRole = (res.user.roles?.[0] as UserRole) || 'user';
+      const defaultPlaceholderName =
+        res.user.fullName.startsWith('کاربر ') && res.user.fullName.length <= 16;
+
+      if (defaultPlaceholderName && !res.user.isVerified) {
+        setVerifiedServerUser({
+          sessionId: res.sessionId,
+          isVerified: res.user.isVerified,
+          role: primaryRole,
+        });
+        setStep('onboarding');
+        return;
+      }
+
+      onCompleteAuth({
+        phone: res.user.phone,
+        name: res.user.fullName,
+        city: knownCity || 'تهران',
+        role: primaryRole,
+        preferredCategories: ['املاک', 'وسایل نقلیه', 'کالای دیجیتال'],
+        isNewUser: false,
+        isVerified: res.user.isVerified,
+        sessionId: res.sessionId,
+      });
+      onClose();
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setOtpError(err.message);
+      } else {
+        setOtpError('خطا در بررسی کد تایید. لطفاً دوباره تلاش کنید.');
+      }
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const verifyOtpCode = (digitsArray: string[]) => {
+    const entered = digitsArray.join('');
+    void submitOtpVerification(entered);
   };
 
   const handleClickSimulatedSmsCode = () => {
-    if (!generatedOtp || generatedOtp.length !== 6) return;
+    if (!generatedOtp || generatedOtp.length !== 6 || isVerifyingOtp) return;
     const chars = generatedOtp.split('');
     setOtpDigits(chars);
     setOtpError('');
     setOtpSuccessFlash(true);
     if (autoLoginTimerRef.current) clearTimeout(autoLoginTimerRef.current);
     autoLoginTimerRef.current = setTimeout(() => {
-      finalizeVerifiedPhone(phoneDigits);
-    }, 320);
+      void submitOtpVerification(generatedOtp);
+    }, 280);
   };
 
   const handleOtpBoxChange = (idx: number, rawVal: string) => {
@@ -255,7 +342,7 @@ export default function AuthOtpModal({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                issueNewOtpAndMove(phoneDigits);
+                void issueNewOtpAndMove(phoneDigits);
               }}
               className="space-y-4"
             >
@@ -359,9 +446,10 @@ export default function AuthOtpModal({
 
               <button
                 type="submit"
-                className="w-full kt-button--primary !h-[44px] text-[14px] font-bold"
+                disabled={isRequestingOtp}
+                className="w-full kt-button--primary !h-[44px] text-[14px] font-bold disabled:opacity-70"
               >
-                <span>دریافت کد تایید پیامکی</span>
+                <span>{isRequestingOtp ? 'در حال ارسال کد...' : 'دریافت کد تایید پیامکی'}</span>
                 <ArrowRight className="w-4 h-4 rotate-180" />
               </button>
             </form>
@@ -398,36 +486,38 @@ export default function AuthOtpModal({
               </div>
 
               {/* Simulated Incoming SMS Notification Box (Click-to-Fill & Login!) */}
-              <div className="p-3.5 rounded-[8px] border-2 border-[var(--semantic-positive)]/50 bg-[var(--semantic-positive-soft)]/70 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[var(--semantic-positive)]">
-                    <span className="w-2 h-2 rounded-full bg-[var(--semantic-positive)] animate-pulse" />
-                    <span>پیامک شبیه‌سازی‌شده تهاتر آپ (بدون پنل SMS)</span>
-                  </span>
-                  <span className="text-[10px] text-[var(--content-neutral-default)]">
-                    هم‌اکنون
-                  </span>
-                </div>
-                <p className="text-[12px] text-[var(--content-neutral-stronger)]">
-                  کد ورود شما به تهاتر آپ آماده است. روی کادر زیر کلیک کنید تا کد خودکار جای‌گذاری و وارد شوید:
-                </p>
-                <button
-                  type="button"
-                  onClick={handleClickSimulatedSmsCode}
-                  data-testid="simulated-sms-code-btn"
-                  className="w-full py-2.5 px-3 rounded-[6px] bg-white hover:bg-[var(--semantic-positive)] hover:text-white border border-[var(--semantic-positive)] text-[var(--semantic-positive)] transition-all flex items-center justify-between gap-2 group shadow-sm"
-                >
-                  <span className="text-[12px] font-bold">
-                    کلیک برای جای‌گذاری و ورود سریع
-                  </span>
-                  <span
-                    dir="ltr"
-                    className="px-3 py-0.5 rounded bg-[var(--semantic-positive-soft)] group-hover:bg-white/20 text-[16px] font-extrabold tracking-[0.22em]"
+              {generatedOtp && (
+                <div className="p-3.5 rounded-[8px] border-2 border-[var(--semantic-positive)]/50 bg-[var(--semantic-positive-soft)]/70 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[var(--semantic-positive)]">
+                      <span className="w-2 h-2 rounded-full bg-[var(--semantic-positive)] animate-pulse" />
+                      <span>پیامک شبیه‌سازی‌شده تهاتر آپ (بدون پنل SMS)</span>
+                    </span>
+                    <span className="text-[10px] text-[var(--content-neutral-default)]">
+                      هم‌اکنون
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-[var(--content-neutral-stronger)]">
+                    کد ورود شما به تهاتر آپ آماده است. روی کادر زیر کلیک کنید تا کد خودکار جای‌گذاری و وارد شوید:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleClickSimulatedSmsCode}
+                    data-testid="simulated-sms-code-btn"
+                    className="w-full py-2.5 px-3 rounded-[6px] bg-white hover:bg-[var(--semantic-positive)] hover:text-white border border-[var(--semantic-positive)] text-[var(--semantic-positive)] transition-all flex items-center justify-between gap-2 group shadow-sm"
                   >
-                    {toPersianDigits(generatedOtp)}
-                  </span>
-                </button>
-              </div>
+                    <span className="text-[12px] font-bold">
+                      کلیک برای جای‌گذاری و ورود سریع
+                    </span>
+                    <span
+                      dir="ltr"
+                      className="px-3 py-0.5 rounded bg-[var(--semantic-positive-soft)] group-hover:bg-white/20 text-[16px] font-extrabold tracking-[0.22em]"
+                    >
+                      {toPersianDigits(generatedOtp)}
+                    </span>
+                  </button>
+                </div>
+              )}
 
               {/* 6 Individual OTP Digit Boxes */}
               <div dir="ltr" className="grid grid-cols-6 gap-2 pt-1">
@@ -478,10 +568,10 @@ export default function AuthOtpModal({
                 </span>
                 <button
                   type="button"
-                  disabled={resendSeconds > 0}
-                  onClick={() => issueNewOtpAndMove(phoneDigits)}
+                  disabled={resendSeconds > 0 || isRequestingOtp}
+                  onClick={() => void issueNewOtpAndMove(phoneDigits)}
                   className={`inline-flex items-center gap-1 font-bold ${
-                    resendSeconds > 0
+                    resendSeconds > 0 || isRequestingOtp
                       ? 'text-[var(--content-neutral-weak)] cursor-not-allowed'
                       : 'text-[var(--brand-primary)] hover:underline'
                   }`}
@@ -493,24 +583,45 @@ export default function AuthOtpModal({
 
               <button
                 type="submit"
-                className="w-full kt-button--primary !h-[44px] text-[14px] font-bold"
+                disabled={isVerifyingOtp}
+                className="w-full kt-button--primary !h-[44px] text-[14px] font-bold disabled:opacity-70"
               >
-                تایید و ورود به حساب
+                {isVerifyingOtp ? 'در حال بررسی کد...' : 'تایید و ورود به حساب'}
               </button>
             </form>
           )}
 
           {step === 'onboarding' && (
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
+                if (isSavingOnboarding) return;
+                const finalName =
+                  fullName.trim() || `کاربر ${toPersianDigits(phoneDigits.slice(-4))}`;
+                const targetRole: UserRole =
+                  verifiedServerUser?.role || (accountType === 'business' ? 'business' : 'user');
+                if (serverOtpMode) {
+                  setIsSavingOnboarding(true);
+                  try {
+                    await tahatorApi.updateMyProfile({
+                      fullName: finalName,
+                      preferredCategories,
+                    });
+                  } catch {
+                    // keep flowing cleanly with optimistic profile even if non-critical field fails
+                  } finally {
+                    setIsSavingOnboarding(false);
+                  }
+                }
                 onCompleteAuth({
                   phone: phoneDigits,
-                  name: fullName.trim() || `کاربر ${toPersianDigits(phoneDigits.slice(-4))}`,
+                  name: finalName,
                   city,
-                  role: accountType === 'business' ? 'business' : 'user',
+                  role: targetRole,
                   preferredCategories,
                   isNewUser: true,
+                  isVerified: verifiedServerUser?.isVerified ?? false,
+                  sessionId: verifiedServerUser?.sessionId,
                 });
                 onClose();
               }}
@@ -609,20 +720,26 @@ export default function AuthOtpModal({
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="submit"
-                  className="flex-1 kt-button--primary !h-[42px] text-[13px] font-bold"
+                  disabled={isSavingOnboarding}
+                  className="flex-1 kt-button--primary !h-[42px] text-[13px] font-bold disabled:opacity-70"
                 >
-                  تکمیل عضویت و ورود به پروفایل
+                  {isSavingOnboarding
+                    ? 'در حال ذخیره پروفایل...'
+                    : 'تکمیل عضویت و ورود به پروفایل'}
                 </button>
                 <button
                   type="button"
+                  disabled={isSavingOnboarding}
                   onClick={() => {
                     onCompleteAuth({
                       phone: phoneDigits,
                       name: fullName.trim() || `کاربر ${toPersianDigits(phoneDigits.slice(-4))}`,
                       city,
-                      role: 'user',
+                      role: verifiedServerUser?.role || 'user',
                       preferredCategories,
                       isNewUser: true,
+                      isVerified: verifiedServerUser?.isVerified ?? false,
+                      sessionId: verifiedServerUser?.sessionId,
                     });
                     onClose();
                   }}
