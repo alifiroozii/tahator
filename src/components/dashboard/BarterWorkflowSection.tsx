@@ -37,7 +37,7 @@ export function BarterAssetsSection({
   onClose,
 }: BarterAssetsSectionProps) {
   const [assetTitle, setAssetTitle] = useState('');
-  const [assetCategory, setAssetCategory] = useState('وسایل نقلیه');
+  const [assetCategory, setAssetCategory] = useState('خودرو');
   const [assetValue, setAssetValue] = useState('');
   const [assetCondition, setAssetCondition] = useState<BarterAsset['condition']>('در حد نو');
   const [assetCity, setAssetCity] = useState(user.city || 'تهران');

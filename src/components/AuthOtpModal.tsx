@@ -38,8 +38,18 @@ interface AuthOtpModalProps {
   onClose: () => void;
 }
 
+function normalizeIranianPhoneInput(raw: string): string {
+  const clean = normalizeDigits(raw).replace(/\D/g, '');
+  if (/^00980\d{10}$/.test(clean)) return clean.slice(4);
+  if (/^00989\d{9}$/.test(clean)) return `0${clean.slice(4)}`;
+  if (/^980\d{10}$/.test(clean)) return clean.slice(2);
+  if (/^989\d{9}$/.test(clean)) return `0${clean.slice(2)}`;
+  if (/^9\d{9}$/.test(clean)) return `0${clean}`;
+  return clean;
+}
+
 function formatMaskedIranPhone(digits: string): string {
-  const clean = normalizeDigits(digits).replace(/\D/g, '').slice(0, 11);
+  const clean = normalizeIranianPhoneInput(digits).slice(0, 11);
   if (clean.length <= 4) return toPersianDigits(clean);
   if (clean.length <= 7) {
     return `${toPersianDigits(clean.slice(0, 4))} ${toPersianDigits(clean.slice(4))}`;
@@ -70,7 +80,7 @@ export default function AuthOtpModal({
 
   const [step, setStep] = useState<'phone' | 'otp' | 'onboarding'>('phone');
   const [phoneDigits, setPhoneDigits] = useState<string>(
-    normalizeDigits(initialPhone).replace(/\D/g, '').slice(0, 11)
+    normalizeDigits(initialPhone).replace(/\D/g, '').slice(0, 15)
   );
   const [phoneError, setPhoneError] = useState<string>('');
   const [showTerms, setShowTerms] = useState<'tos' | 'privacy' | null>(null);
@@ -114,24 +124,26 @@ export default function AuthOtpModal({
     }
   }, [step]);
 
-  const isPhoneValid = /^09\d{9}$/.test(phoneDigits);
+  const canonicalPhone = normalizeIranianPhoneInput(phoneDigits);
+  const isPhoneValid = /^09\d{9}$/.test(canonicalPhone);
 
   const handlePhoneInputChange = (rawVal: string) => {
-    const clean = normalizeDigits(rawVal).replace(/\D/g, '').slice(0, 11);
+    const clean = normalizeDigits(rawVal).replace(/\D/g, '').slice(0, 15);
     setPhoneDigits(clean);
-    if (/^09\d{9}$/.test(clean)) {
+    if (/^09\d{9}$/.test(normalizeIranianPhoneInput(clean))) {
       setPhoneError('');
     }
   };
 
   const issueNewOtpAndMove = async (targetPhone: string) => {
     if (isRequestingOtp) return;
-    const clean = normalizeDigits(targetPhone).replace(/\D/g, '').slice(0, 11);
+    const clean = normalizeIranianPhoneInput(targetPhone);
     if (!/^09\d{9}$/.test(clean)) {
-      setPhoneError('شمارهٔ موبایل نامعتبر است (باید ۱۱ رقم و با ۰۹ شروع شود).');
+      setPhoneError('شمارهٔ موبایل نامعتبر است (مثلاً 09128416047 یا 9128416047).');
       return;
     }
 
+    setPhoneDigits(clean);
     setPhoneError('');
     setIsRequestingOtp(true);
     try {
@@ -302,7 +314,7 @@ export default function AuthOtpModal({
                     dir="ltr"
                     value={phoneDigits}
                     onChange={(e) => handlePhoneInputChange(e.target.value)}
-                    placeholder="0912..."
+                    placeholder="9128416047 یا 0912..."
                     className={`kt-input !h-[46px] !pl-16 !pr-4 text-left font-bold tracking-[0.06em] text-[15px] ${
                       phoneError ? '!border-[var(--brand-primary)]' : ''
                     }`}

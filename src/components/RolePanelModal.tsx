@@ -711,7 +711,7 @@ export default function RolePanelModal({
                     پنل اختصاصی کسب‌وکار — بازرگانی و املاک تهاتر پلاس
                   </div>
                   <div className="text-[12px] text-[var(--content-neutral-stronger)] mt-0.5">
-                    دسترسی ویژه نمایشگاه‌داران خودرو، آژانس‌های املاک و فروشگاه‌های کالای دیجیتال
+                    دسترسی ویژه نمایشگاه‌داران خودرو (سبک، سنگین و کشاورزی)، موتورسیکلت و آژانس‌های املاک
                   </div>
                 </div>
                 <span className="px-3 py-1 rounded-full bg-white text-[var(--brand-primary)] text-[12px] font-bold">

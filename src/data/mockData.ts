@@ -6,6 +6,7 @@ export interface CategoryItem {
   iconName:
     | 'building'
     | 'car'
+    | 'bike'
     | 'smartphone'
     | 'lamp'
     | 'wrench'
@@ -129,55 +130,46 @@ export const CATEGORIES: CategoryItem[] = [
     emoji: '🏠',
     showInSidebar: true,
     iconName: 'building',
-    subcategories: ['آپارتمان', 'ویلا', 'مغازه و دفتر', 'زمین و کلنگی'],
+    subcategories: [
+      'آپارتمان',
+      'ویلا',
+      'مغازه و دفتر',
+      'زمین و کلنگی',
+      'باغ و اراضی کشاورزی',
+      'اداری و تجاری',
+      'سوله و صنعتی',
+      'سایر املاک',
+    ],
   },
   {
-    id: 'vehicles',
-    name: 'وسایل نقلیه',
+    id: 'cars',
+    name: 'خودرو',
     emoji: '🚗',
     showInSidebar: true,
     iconName: 'car',
-    subcategories: ['خودرو', 'موتورسیکلت', 'قطعات و لوازم یدکی'],
+    subcategories: [
+      'خودرو',
+      'خودرو سواری (سبک)',
+      'خودرو سنگین و نیمه‌سنگین',
+      'ماشین‌آلات کشاورزی',
+      'ماشین‌آلات صنعتی و غیرکشاورزی',
+      'وانت، ون و خودرو کار',
+    ],
   },
   {
-    id: 'digital',
-    name: 'کالای دیجیتال',
-    emoji: '📱',
+    id: 'motorcycles',
+    name: 'موتورسیکلت',
+    emoji: '🏍️',
     showInSidebar: true,
-    iconName: 'smartphone',
-    subcategories: ['موبایل', 'موبایل و تبلت', 'لپتاپ و کامپیوتر', 'صوتی و تصویری', 'کنسول بازی'],
-  },
-  {
-    id: 'home-kitchen',
-    name: 'خانه و آشپزخانه',
-    emoji: '🛋️',
-    showInSidebar: true,
-    iconName: 'lamp',
-    subcategories: ['فرش و قالی', 'ماشین لباسشویی', 'یخچال و فریزر', 'مبلمان و دکوراسیون'],
-  },
-  {
-    id: 'personal',
-    name: 'وسایل شخصی',
-    emoji: '👜',
-    showInSidebar: true,
-    iconName: 'watch',
-    subcategories: ['پوشاک', 'کیف و کفش', 'ساعت و اکسسوری'],
-  },
-  {
-    id: 'industrial',
-    name: 'تجهیزات و صنعتی',
-    emoji: '⚙️',
-    showInSidebar: true,
-    iconName: 'cog',
-    subcategories: ['ماشین‌آلات', 'تجهیزات کارگاهی و پزشکی'],
-  },
-  {
-    id: 'services',
-    name: 'خدمات',
-    emoji: '🛠️',
-    showInSidebar: true,
-    iconName: 'wrench',
-    subcategories: ['حمل و نقل', 'پیشه و مهارت', 'مالی و مشاوره'],
+    iconName: 'bike',
+    subcategories: [
+      'موتورسیکلت',
+      'موتور شهری و دنده‌ای',
+      'اسکوتر و اتوماتیک',
+      'موتور سنگین و مسابقه‌ای',
+      'موتور کراس و آفرود',
+      'موتور برقی و سه‌چرخ',
+    ],
   },
 ];
 
@@ -207,7 +199,7 @@ export const POPULAR_SEARCHES = [
   'آپارتمان تهران',
   'خودرو',
   'ویلا شمال',
-  'لپ‌تاپ',
+  'خودرو سنگین و کشاورزی',
   'موتورسیکلت',
   'تهاتر ملک',
 ];

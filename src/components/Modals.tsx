@@ -505,7 +505,7 @@ export function PostAdModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="مثلاً: آپارتمان ۸۰ متری در تهران یا آیفون ۱۶ پرو مکس"
+              placeholder="مثلاً: آپارتمان ۸۰ متری، خودرو سواری/سنگین/کشاورزی یا موتورسیکلت"
               className="kt-input"
             />
           </div>
@@ -746,7 +746,7 @@ export function PostAdModal({
                 type="text"
                 value={exchangeWith}
                 onChange={(e) => setExchangeWith(e.target.value)}
-                placeholder="مورد دلخواه جهت معاوضه (مثلاً: خودرو هم‌رده یا لپ‌تاپ)..."
+                placeholder="مورد دلخواه جهت معاوضه (مثلاً: خودرو هم‌رده، ماشین‌آلات کشاورزی، موتورسیکلت یا ملک)..."
                 className="kt-input !h-[36px] text-[12px]"
               />
             )}

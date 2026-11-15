@@ -325,10 +325,12 @@ export default function Sidebar({
         </div>
       )}
 
-      {(filters.category === 'وسایل نقلیه' || filters.category === 'کالای دیجیتال') && (
+      {(filters.category === 'خودرو' || filters.category === 'موتورسیکلت') && (
         <div className="py-3.5 border-b border-[var(--border-neutral-weaker)] space-y-2">
           <div className="text-[13px] font-bold text-[var(--brand-primary)]">
-            {filters.category === 'وسایل نقلیه' ? '🚗 فیلترهای اختصاصی خودرو' : '📱 وضعیت کالای دیجیتال'}
+            {filters.category === 'خودرو'
+              ? '🚗 فیلتر وضعیت خودرو'
+              : '🏍️ فیلتر وضعیت موتورسیکلت'}
           </div>
           <div className="grid grid-cols-3 gap-1">
             {[

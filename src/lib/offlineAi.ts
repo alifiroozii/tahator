@@ -109,25 +109,30 @@ function deterministicUnit(seed: string): number {
 
 function getCategoryBaselinePrice(category: string, subcategory: string): number {
   if (category === 'املاک') {
-    if (subcategory.includes('ویلا') || subcategory.includes('کلنگی')) return 18_500_000_000;
-    if (subcategory.includes('مغازه')) return 12_000_000_000;
+    if (subcategory.includes('ویلا') || subcategory.includes('کلنگی') || subcategory.includes('باغ')) {
+      return 18_500_000_000;
+    }
+    if (subcategory.includes('مغازه') || subcategory.includes('تجاری') || subcategory.includes('سوله')) {
+      return 12_000_000_000;
+    }
     return 8_200_000_000;
   }
-  if (category === 'وسایل نقلیه') {
-    if (subcategory.includes('موتور')) return 240_000_000;
+  if (category === 'خودرو') {
+    if (
+      subcategory.includes('سنگین') ||
+      subcategory.includes('کشاورزی') ||
+      subcategory.includes('راهسازی') ||
+      subcategory.includes('صنعتی')
+    ) {
+      return 3_400_000_000;
+    }
     return 1_650_000_000;
   }
-  if (category === 'کالای دیجیتال') {
-    if (subcategory.includes('لپ‌تاپ')) return 95_000_000;
-    if (subcategory.includes('کنسول')) return 48_000_000;
-    return 78_000_000;
+  if (category === 'موتورسیکلت') {
+    if (subcategory.includes('سنگین')) return 480_000_000;
+    return 240_000_000;
   }
-  if (category === 'خانه و آشپزخانه') return 62_000_000;
-  if (category === 'وسایل شخصی') return 35_000_000;
-  if (category === 'تجهیزات و صنعتی') return 260_000_000;
-  if (category === 'خدمات') return 18_000_000;
-  if (category === 'سرگرمی و فراغت') return 42_000_000;
-  return 50_000_000;
+  return 1_200_000_000;
 }
 
 export function evaluateListingPrice(
@@ -312,18 +317,26 @@ export function matchBarterListings(
       const candText = `${candidate.title} ${candidate.category} ${candidate.subcategory}`.toLowerCase();
 
       if (
-        (targetWant.includes('خودرو') || targetWant.includes('ماشین')) &&
-        candidate.category === 'وسایل نقلیه'
+        (targetWant.includes('خودرو') ||
+          targetWant.includes('ماشین') ||
+          targetWant.includes('کشاورزی') ||
+          targetWant.includes('تراکتور') ||
+          targetWant.includes('کامیون')) &&
+        candidate.category === 'خودرو'
       ) {
         score += 20;
       } else if (
-        (targetWant.includes('ملک') || targetWant.includes('آپارتمان') || targetWant.includes('زمین')) &&
+        targetWant.includes('موتور') &&
+        candidate.category === 'موتورسیکلت'
+      ) {
+        score += 20;
+      } else if (
+        (targetWant.includes('ملک') ||
+          targetWant.includes('آپارتمان') ||
+          targetWant.includes('زمین') ||
+          targetWant.includes('ویلا') ||
+          targetWant.includes('باغ')) &&
         candidate.category === 'املاک'
-      ) {
-        score += 20;
-      } else if (
-        (targetWant.includes('موبایل') || targetWant.includes('آیفون') || targetWant.includes('لپ') || targetWant.includes('دیجیتال')) &&
-        candidate.category === 'کالای دیجیتال'
       ) {
         score += 20;
       } else if (candidate.category === listing.category) {
@@ -358,7 +371,9 @@ export function matchBarterListings(
 
       const matchPercent = Math.max(76, Math.min(97, score));
       const reason =
-        candText.includes('خودرو') || candidate.category === 'وسایل نقلیه'
+        candText.includes('موتور') || candidate.category === 'موتورسیکلت'
+          ? 'هم‌خوانی با اولویت تهاتر موتورسیکلت'
+          : candText.includes('خودرو') || candidate.category === 'خودرو'
           ? 'هم‌خوانی بالا با اولویت تهاتر خودرویی'
           : candidate.city === listing.city
           ? `هم‌شهری (${candidate.city}) و آماده معاوضه`
@@ -477,8 +492,24 @@ export function autoCompleteDraftAd(input: {
     detectedCategory = 'املاک';
     if (lower.includes('ویلا')) detectedSubcategory = 'ویلا';
     else if (lower.includes('زمین') || lower.includes('باغ')) detectedSubcategory = 'زمین و کلنگی';
+    else if (lower.includes('باغ') || lower.includes('کشاورزی')) detectedSubcategory = 'باغ و اراضی کشاورزی';
+    else if (lower.includes('سوله') || lower.includes('کارگاه')) detectedSubcategory = 'سوله و صنعتی';
     else if (lower.includes('مغازه') || lower.includes('دفتر')) detectedSubcategory = 'مغازه و دفتر';
     else detectedSubcategory = 'آپارتمان';
+  } else if (
+    lower.includes('موتور') ||
+    lower.includes('اسکوتر') ||
+    lower.includes('آیروکس') ||
+    lower.includes('بنلی') ||
+    lower.includes('کراس') ||
+    lower.includes('وسپا')
+  ) {
+    detectedCategory = 'موتورسیکلت';
+    if (lower.includes('اسکوتر') || lower.includes('اتومات')) detectedSubcategory = 'اسکوتر و اتوماتیک';
+    else if (lower.includes('سنگین')) detectedSubcategory = 'موتور سنگین و مسابقه‌ای';
+    else if (lower.includes('کراس') || lower.includes('آفرود')) detectedSubcategory = 'موتور کراس و آفرود';
+    else if (lower.includes('برقی')) detectedSubcategory = 'موتور برقی و سه‌چرخ';
+    else detectedSubcategory = 'موتورسیکلت';
   } else if (
     lower.includes('خودرو') ||
     lower.includes('ماشین') ||
@@ -488,58 +519,28 @@ export function autoCompleteDraftAd(input: {
     lower.includes('دنا') ||
     lower.includes('هایما') ||
     lower.includes('تیگو') ||
-    lower.includes('موتور')
+    lower.includes('تراکتور') ||
+    lower.includes('کمباین') ||
+    lower.includes('کامیون') ||
+    lower.includes('کشنده') ||
+    lower.includes('لودر') ||
+    lower.includes('وانت') ||
+    lower.includes('تیبا') ||
+    lower.includes('تارا') ||
+    lower.includes('کی ام سی')
   ) {
-    detectedCategory = 'وسایل نقلیه';
-    detectedSubcategory = lower.includes('موتور') ? 'موتورسیکلت' : 'خودرو';
-  } else if (
-    lower.includes('آیفون') ||
-    lower.includes('گوشی') ||
-    lower.includes('سامسونگ') ||
-    lower.includes('موبایل') ||
-    lower.includes('لپ') ||
-    lower.includes('مک') ||
-    lower.includes('پلی') ||
-    lower.includes('کنسول') ||
-    lower.includes('سونی')
-  ) {
-    detectedCategory = 'کالای دیجیتال';
-    if (lower.includes('لپ') || lower.includes('مک')) detectedSubcategory = 'لپ‌تاپ و کامپیوتر';
-    else if (lower.includes('پلی') || lower.includes('کنسول')) detectedSubcategory = 'کنسول بازی';
-    else if (lower.includes('تلویزیون') || lower.includes('باند')) detectedSubcategory = 'صوتی و تصویری';
-    else detectedSubcategory = 'موبایل و تبلت';
-  } else if (
-    lower.includes('مبل') ||
-    lower.includes('فرش') ||
-    lower.includes('یخچال') ||
-    lower.includes('لباسشویی') ||
-    lower.includes('میز')
-  ) {
-    detectedCategory = 'خانه و آشپزخانه';
-    if (lower.includes('مبل') || lower.includes('میز')) detectedSubcategory = 'مبلمان و میز';
-    else if (lower.includes('فرش')) detectedSubcategory = 'فرش و گلیم';
-    else detectedSubcategory = 'لوازم خانگی';
-  } else if (
-    lower.includes('ساعت') ||
-    lower.includes('رولکس') ||
-    lower.includes('کفش') ||
-    lower.includes('کیف') ||
-    lower.includes('کت')
-  ) {
-    detectedCategory = 'وسایل شخصی';
-    detectedSubcategory = lower.includes('ساعت') ? 'ساعت و اکسسوری' : 'پوشاک';
-  } else if (
-    lower.includes('صنعتی') ||
-    lower.includes('دستگاه') ||
-    lower.includes('دریل') ||
-    lower.includes('پمپ') ||
-    lower.includes('ابزار')
-  ) {
-    detectedCategory = 'تجهیزات و صنعتی';
-    detectedSubcategory = lower.includes('ابزار') ? 'ابزارآلات' : 'ماشین‌آلات صنعتی';
-  } else if (lower.includes('استخدام') || lower.includes('حسابدار') || lower.includes('برنامه‌نویس')) {
-    detectedCategory = 'استخدام و کاریابی';
-    detectedSubcategory = 'اداری و مدیریت';
+    detectedCategory = 'خودرو';
+    if (lower.includes('تراکتور') || lower.includes('کمباین') || lower.includes('کشاورزی')) {
+      detectedSubcategory = 'ماشین‌آلات کشاورزی';
+    } else if (lower.includes('کامیون') || lower.includes('کشنده') || lower.includes('سنگین') || lower.includes('خاور')) {
+      detectedSubcategory = 'خودرو سنگین و نیمه‌سنگین';
+    } else if (lower.includes('لودر') || lower.includes('بیل') || lower.includes('راهسازی') || lower.includes('لیفتراک')) {
+      detectedSubcategory = 'ماشین‌آلات صنعتی و غیرکشاورزی';
+    } else if (lower.includes('وانت') || lower.includes('نیسان') || lower.includes('ون')) {
+      detectedSubcategory = 'وانت، ون و خودرو کار';
+    } else {
+      detectedSubcategory = 'خودرو';
+    }
   }
 
   const city = input.city || 'تهران';
@@ -551,10 +552,10 @@ export function autoCompleteDraftAd(input: {
   const suggestedExchangeWith =
     input.exchangeWith?.trim() ||
     (detectedCategory === 'املاک'
-      ? 'خودرو خارجی یا آپارتمان کوچک‌تر در تهران'
-      : detectedCategory === 'وسایل نقلیه'
-      ? 'خودرو هم‌رده یا کالای دیجیتال و طلا'
-      : 'لپ‌تاپ، گوشی پرچمدار یا کالای خانگی هم‌ارزش');
+      ? 'خودرو سواری یا سنگین یا آپارتمان کوچک‌تر در تهران'
+      : detectedCategory === 'موتورسیکلت'
+      ? 'موتورسیکلت هم‌رده یا خودرو کارکرده'
+      : 'خودرو هم‌رده، ملک یا زمین');
 
   const baseTitle = title || `${detectedSubcategory} تمیز و سالم`;
   const suggestedTitle = baseTitle.includes('معاوضه') ? baseTitle : `${baseTitle} (امکان معاوضه)`;
@@ -685,9 +686,9 @@ export function answerOfflineAiQuery(
   const clean = normalizeDigits(query).trim().toLowerCase();
   if (!clean) {
     return {
-      answer: 'سوال خود را بنویسید (مثلاً: «آپارتمان قابل معاوضه در تهران» یا «گوشی زیر ۱۵۰ میلیون»).',
+      answer: 'سوال خود را بنویسید (مثلاً: «آپارتمان قابل معاوضه در تهران»، «خودرو زیر ۲ میلیارد» یا «موتورسیکلت قابل تهاتر»).',
       matchedListings: allListings.slice(0, 3),
-      suggestions: ['بهترین گزینه‌های معاوضه ملک و خودرو', 'کالای دیجیتال خوش‌قیمت', 'محاسبه قسط ۵۰/۵۰'],
+      suggestions: ['بهترین گزینه‌های معاوضه ملک و خودرو', 'موتورسیکلت‌های آماده تهاتر', 'محاسبه قسط ۵۰/۵۰'],
     };
   }
 
@@ -702,16 +703,20 @@ export function answerOfflineAiQuery(
   }
 
   let targetCategory: string | null = null;
-  if (clean.includes('ملک') || clean.includes('آپارتمان') || clean.includes('ویلا') || clean.includes('زمین')) {
+  if (clean.includes('ملک') || clean.includes('آپارتمان') || clean.includes('ویلا') || clean.includes('زمین') || clean.includes('باغ') || clean.includes('مغازه')) {
     targetCategory = 'املاک';
-  } else if (clean.includes('خودرو') || clean.includes('ماشین') || clean.includes('پژو') || clean.includes('توسان')) {
-    targetCategory = 'وسایل نقلیه';
-  } else if (clean.includes('گوشی') || clean.includes('آیفون') || clean.includes('موبایل') || clean.includes('لپ') || clean.includes('دیجیتال')) {
-    targetCategory = 'کالای دیجیتال';
-  } else if (clean.includes('مبل') || clean.includes('فرش') || clean.includes('آشپزخانه')) {
-    targetCategory = 'خانه و آشپزخانه';
-  } else if (clean.includes('ساعت') || clean.includes('رولکس') || clean.includes('شخصی')) {
-    targetCategory = 'وسایل شخصی';
+  } else if (clean.includes('موتور') || clean.includes('اسکوتر')) {
+    targetCategory = 'موتورسیکلت';
+  } else if (
+    clean.includes('خودرو') ||
+    clean.includes('ماشین') ||
+    clean.includes('پژو') ||
+    clean.includes('توسان') ||
+    clean.includes('تراکتور') ||
+    clean.includes('کامیون') ||
+    clean.includes('کشاورزی')
+  ) {
+    targetCategory = 'خودرو';
   }
 
   const wantsExchange = clean.includes('معاوضه') || clean.includes('تهاتر');
@@ -750,7 +755,7 @@ export function answerOfflineAiQuery(
     matchedListings: topMatches,
     suggestions: [
       'آپارتمان قابل معاوضه در تهران',
-      'گوشی و لپ‌تاپ زیر ۱۵۰ میلیون',
+      'موتورسیکلت قابل تهاتر',
       'خودرو برای تهاتر و اقساط ۵۰/۵۰',
     ],
   };
