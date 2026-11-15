@@ -347,9 +347,9 @@ export const tahatorApi = {
   },
 
   upgradeMyListing(id: string, action: 'ladder' | 'urgent') {
-    return apiRequest<BackendListingItem>(`/listings/${encodeURIComponent(id)}/upgrade`, {
+    return apiRequest<BackendListingItem>(`/listings/${encodeURIComponent(id)}/${action}`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({}),
     });
   },
 };
