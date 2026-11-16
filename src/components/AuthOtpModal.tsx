@@ -21,6 +21,8 @@ import { UserRole } from '@/types/platform';
 
 interface AuthOtpModalProps {
   initialPhone?: string;
+  initialStep?: 'phone' | 'otp' | 'onboarding';
+  initialFullName?: string;
   availableCities?: { id: string; name: string; province: string }[];
   availableCategories?: { id: string; name: string; emoji: string; showInSidebar?: boolean }[];
   onCompleteAuth: (payload: {
@@ -59,6 +61,8 @@ function formatMaskedIranPhone(digits: string): string {
 
 export default function AuthOtpModal({
   initialPhone = '',
+  initialStep = 'phone',
+  initialFullName = '',
   availableCities,
   availableCategories,
   onCompleteAuth,
@@ -78,7 +82,7 @@ export default function AuthOtpModal({
           showInSidebar: c.showInSidebar,
         }));
 
-  const [step, setStep] = useState<'phone' | 'otp' | 'onboarding'>('phone');
+  const [step, setStep] = useState<'phone' | 'otp' | 'onboarding'>(initialStep);
   const [phoneDigits, setPhoneDigits] = useState<string>(
     normalizeDigits(initialPhone).replace(/\D/g, '').slice(0, 15)
   );
@@ -87,6 +91,7 @@ export default function AuthOtpModal({
 
   // Real Melipayamak OTP state (4..12 digits)
   const [otpInput, setOtpInput] = useState<string>('');
+  const [isOtpFocused, setIsOtpFocused] = useState<boolean>(false);
   const [otpError, setOtpError] = useState<string>('');
   const [otpSuccessFlash, setOtpSuccessFlash] = useState<boolean>(false);
   const [resendSeconds, setResendSeconds] = useState<number>(180);
@@ -101,7 +106,7 @@ export default function AuthOtpModal({
   } | null>(null);
 
   // Onboarding state (shown ONLY on first login when onboardingCompleted === false)
-  const [fullName, setFullName] = useState<string>('');
+  const [fullName, setFullName] = useState<string>(initialFullName);
   const [city, setCity] = useState<string>(cityOptions[0]?.name || 'تهران');
   const [accountType, setAccountType] = useState<'PERSONAL' | 'BUSINESS'>('PERSONAL');
   const [preferredCategories, setPreferredCategories] = useState<string[]>([]);
@@ -234,15 +239,22 @@ export default function AuthOtpModal({
       } else {
         setOtpError('خطا در بررسی کد تایید. لطفاً دوباره تلاش کنید.');
       }
+      setTimeout(() => {
+        otpFieldRef.current?.focus();
+      }, 40);
     } finally {
       setIsVerifyingOtp(false);
     }
   };
 
   const handleOtpInputChange = (val: string) => {
+    const prevLen = otpInput.length;
     const clean = normalizeDigits(val).replace(/\D/g, '').slice(0, 12);
     setOtpInput(clean);
     if (otpError) setOtpError('');
+    if (prevLen < 6 && clean.length === 6 && !isVerifyingOtp) {
+      void submitOtpVerification(clean);
+    }
   };
 
   const togglePrefCategory = (catName: string) => {
@@ -257,7 +269,9 @@ export default function AuthOtpModal({
   return (
     <div
       className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4"
-      onClick={onClose}
+      onClick={() => {
+        if (step !== 'onboarding') onClose();
+      }}
     >
       <div
         className="bg-white rounded-[10px] shadow-2xl w-full max-w-[460px] overflow-hidden border border-[var(--border-neutral-weaker)] animate-in fade-in zoom-in-95 duration-150"
@@ -411,27 +425,79 @@ export default function AuthOtpModal({
               </div>
 
               <div>
-                <label className="block text-[12px] font-bold mb-1.5 text-[var(--content-neutral-strong)]">
-                  کد تایید ارسال‌شده:
-                </label>
-                <input
-                  ref={otpFieldRef}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
+                <div className="flex items-center justify-between mb-2">
+                  <label
+                    htmlFor="tahator-otp-input"
+                    className="block text-[12px] font-bold text-[var(--content-neutral-strong)]"
+                  >
+                    کد تایید ۶ رقمی ارسال‌شده:
+                  </label>
+                  <span className="text-[11px] text-[var(--content-neutral-default)]">
+                    امکان پیست مستقیم پیامک
+                  </span>
+                </div>
+                <div
                   dir="ltr"
-                  maxLength={12}
-                  value={otpInput}
-                  onChange={(e) => handleOtpInputChange(e.target.value)}
-                  placeholder="مثلاً کد پیامک‌شده را وارد کنید"
-                  className={`kt-input !h-[52px] text-center text-[20px] font-bold tracking-[0.22em] ${
-                    otpError
-                      ? '!border-[var(--brand-primary)] bg-[#fff5f5]'
-                      : otpSuccessFlash
-                      ? '!border-[var(--semantic-positive)] bg-[var(--semantic-positive-soft)]'
-                      : ''
-                  }`}
-                />
+                  onClick={() => otpFieldRef.current?.focus()}
+                  className="relative cursor-text select-none"
+                >
+                  <input
+                    id="tahator-otp-input"
+                    ref={otpFieldRef}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    dir="ltr"
+                    value={otpInput}
+                    onChange={(e) => handleOtpInputChange(e.target.value)}
+                    onFocus={() => setIsOtpFocused(true)}
+                    onBlur={() => setIsOtpFocused(false)}
+                    disabled={isVerifyingOtp}
+                    aria-label="کد تایید ۶ رقمی"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-text z-10 text-[16px]"
+                  />
+                  <div
+                    className="grid gap-2"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(6, Math.min(12, otpInput.length))}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {Array.from({
+                      length: Math.max(6, Math.min(12, otpInput.length)),
+                    }).map((_, idx) => {
+                      const char = otpInput[idx] || '';
+                      const isActive =
+                        isOtpFocused &&
+                        !isVerifyingOtp &&
+                        (idx === otpInput.length ||
+                          (otpInput.length >= 6 && idx === Math.max(5, otpInput.length - 1)));
+                      return (
+                        <div
+                          key={idx}
+                          className={`h-[54px] rounded-[8px] border-2 flex items-center justify-center text-[22px] font-extrabold transition-all ${
+                            otpError
+                              ? 'border-[var(--brand-primary)] bg-[#fff5f5] text-[var(--brand-primary)]'
+                              : otpSuccessFlash
+                              ? 'border-[var(--semantic-positive)] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)]'
+                              : isActive
+                              ? 'border-[var(--brand-primary)] bg-white ring-2 ring-[var(--brand-primary)]/15 text-[var(--content-neutral-strong)]'
+                              : char
+                              ? 'border-[var(--border-neutral-default)] bg-white text-[var(--content-neutral-strong)]'
+                              : 'border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] text-[var(--content-neutral-weak)]'
+                          }`}
+                        >
+                          {char ? (
+                            <span>{toPersianDigits(char)}</span>
+                          ) : isActive ? (
+                            <span className="w-[2px] h-[22px] bg-[var(--brand-primary)] animate-pulse rounded-full" />
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-[var(--border-neutral-default)]/50" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {otpError && (

@@ -148,6 +148,7 @@ export default function HomePage() {
   // User Dashboard & Account State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [forceOnboarding, setForceOnboarding] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [myAdIds, setMyAdIds] = useState<string[]>([]);
@@ -439,6 +440,12 @@ export default function HomePage() {
     try {
       const profile = await tahatorApi.getMyProfile();
       applyBackendProfile(profile);
+      if (profile.requiresOnboarding) {
+        setForceOnboarding(true);
+        setShowAuthModal(true);
+      } else {
+        setForceOnboarding(false);
+      }
 
       const [walletData, sessionList, myListingsRes, archivedRes] = await Promise.all([
         tahatorApi.getMyWallet().catch(() => null),
@@ -2195,6 +2202,14 @@ export default function HomePage() {
       {showAuthModal && (
         <AuthOtpModal
           initialPhone={isLoggedIn ? userProfile.phone : ''}
+          initialStep={forceOnboarding ? 'onboarding' : 'phone'}
+          initialFullName={
+            forceOnboarding &&
+            userProfile.name !== 'کاربر مهمان' &&
+            userProfile.name !== 'کاربر تهاتر'
+              ? userProfile.name
+              : ''
+          }
           availableCities={backendCities}
           availableCategories={backendCategories}
           onCompleteAuth={({
@@ -2227,6 +2242,7 @@ export default function HomePage() {
             persistSafe('tahator_profile_v2', nextProfile);
             persistSafe('tahator_auth_v2', true);
             persistSafe('tahator_role_v2', safeRole);
+            setForceOnboarding(false);
             void syncSessionFromBackend();
 
             if (isNewUser) {
