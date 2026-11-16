@@ -316,8 +316,7 @@ export default function HomePage() {
       'tahator_profile_v2',
       (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
     );
-    const hasStaleMockProfile =
-      savedProfile?.phone === '09123456789' || savedProfile?.name === 'علی فیروزی';
+    const hasStaleMockProfile = savedProfile?.phone === '09123456789';
 
     if (hasStaleMockProfile) {
       resetGuestState();
@@ -2303,7 +2302,7 @@ export default function HomePage() {
             setShowDashboardModal(true);
             triggerToast(
               onboardingCompleted && isNewUser
-                ? `حساب شما با شماره ${toPersianDigits(phone)} آماده شد — خوش آمدید ${name}!`
+                ? `حساب شما با شماره \u2066${toPersianDigits(phone)}\u2069 آماده شد — خوش آمدید ${name}!`
                 : `خوش آمدید ${name}! ورود با موفقیت انجام شد`
             );
           }}

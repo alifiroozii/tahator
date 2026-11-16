@@ -967,7 +967,7 @@ export default function UserDashboardModal({
                     >
                       {CITIES.map((c) => (
                         <option key={c.id} value={c.name}>
-                          {c.name} ({c.province})
+                          {c.province && c.province !== c.name ? `${c.name} (${c.province})` : c.name}
                         </option>
                       ))}
                     </select>

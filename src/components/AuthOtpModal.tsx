@@ -274,7 +274,7 @@ export default function AuthOtpModal({
       }}
     >
       <div
-        className="bg-white rounded-[10px] shadow-2xl w-full max-w-[460px] overflow-hidden border border-[var(--border-neutral-weaker)] animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white rounded-[10px] shadow-2xl w-full max-w-[490px] overflow-hidden border border-[var(--border-neutral-weaker)] animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -398,7 +398,7 @@ export default function AuthOtpModal({
                   </h3>
                   <p className="text-[12.5px] leading-6 text-[var(--content-neutral-default)]">
                     رمز یک‌بار مصرف به شماره{' '}
-                    <span dir="ltr" className="font-bold text-[var(--content-neutral-strong)]">
+                    <span dir="ltr" className="inline-block font-bold text-[var(--content-neutral-strong)]">
                       {formatMaskedIranPhone(phoneDigits)}
                     </span>{' '}
                     پیامک شد.
@@ -581,7 +581,7 @@ export default function AuthOtpModal({
                     completeOnboarding: true,
                   });
                   onCompleteAuth({
-                    phone: phoneDigits,
+                    phone: canonicalPhone || phoneDigits,
                     name: trimmedName,
                     city,
                     accountType,
@@ -605,10 +605,14 @@ export default function AuthOtpModal({
               }}
               className="space-y-4"
             >
-              <div className="p-3 rounded-[8px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-bold flex items-center gap-2">
-                <UserCheck className="w-4 h-4 shrink-0" />
+              <div className="p-3 rounded-[8px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12.5px] leading-6 font-bold flex items-start gap-2">
+                <UserCheck className="w-4 h-4 shrink-0 mt-1" />
                 <span>
-                  شماره {formatMaskedIranPhone(phoneDigits)} تایید شد! این فرم فقط در اولین ورود شما نمایش داده می‌شود:
+                  شماره{' '}
+                  <span dir="ltr" className="inline-block font-extrabold mx-0.5">
+                    {formatMaskedIranPhone(phoneDigits)}
+                  </span>{' '}
+                  تایید شد! این اطلاعات فقط در اولین ورود دریافت می‌شود.
                 </span>
               </div>
 
@@ -640,7 +644,7 @@ export default function AuthOtpModal({
                   >
                     {cityOptions.map((c) => (
                       <option key={c.id} value={c.name}>
-                        {c.name} ({c.province})
+                        {c.province && c.province !== c.name ? `${c.name} (${c.province})` : c.name}
                       </option>
                     ))}
                   </select>
