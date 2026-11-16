@@ -218,6 +218,11 @@ export default function HomePage() {
 
   const resetGuestState = () => {
     setIsLoggedIn(false);
+    setForceOnboarding(false);
+    setShowDashboardModal(false);
+    setShowRolePanelModal(false);
+    setShowPostAdModal(false);
+    setShowChatModal(false);
     setUserRole('user');
     setUserProfile(DEFAULT_USER_PROFILE);
     setMyAdIds([]);
@@ -226,6 +231,13 @@ export default function HomePage() {
     setTransactions([]);
     setSessions([]);
     setNotifications([]);
+    setBarterAssets([]);
+    setBarterOffers([]);
+    setSavedSearches([]);
+    setInstallmentRequests([]);
+    setBookmarks([]);
+    setNotes({});
+    setRecentIds([]);
     try {
       [
         'tahator_auth_v2',
@@ -235,11 +247,43 @@ export default function HomePage() {
         'tahator_tx_v2',
         'tahator_sessions_v2',
         'tahator_notifications_v2',
+        'tahator_offers_v2',
+        'tahator_searches_v2',
+        'tahator_barter_assets_v2',
+        'tahator_bookmarks',
+        'tahator_notes',
+        'tahator_recent',
         'tahator_user_ads',
       ].forEach((k) => localStorage.removeItem(k));
     } catch {
       // ignore storage errors
     }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await tahatorApi.logout();
+    } catch {
+      // Even if network fails, immediately lock local session & close all private modals
+    }
+    resetGuestState();
+    try {
+      localStorage.setItem('tahator_logout_signal', String(Date.now()));
+    } catch {
+      // ignore storage errors
+    }
+    triggerToast('از حساب کاربری خارج شدید');
+  };
+
+  const requireAuthAction = (action: () => void, message?: string) => {
+    if (!isLoggedIn) {
+      setShowDashboardModal(false);
+      setShowRolePanelModal(false);
+      setShowAuthModal(true);
+      triggerToast(message || 'برای دسترسی به پروفایل و داشبورد ابتدا وارد حساب کاربری شوید');
+      return;
+    }
+    action();
   };
 
   const loadPublicCatalog = async () => {
@@ -306,78 +350,24 @@ export default function HomePage() {
       }
     };
 
+    // Never trust localStorage for authentication state or sensitive profile PII;
+    // purge legacy stored credentials and verify strictly against HttpOnly session cookies.
     try {
-      localStorage.removeItem('tahator_user_ads');
+      [
+        'tahator_auth_v2',
+        'tahator_role_v2',
+        'tahator_profile_v2',
+        'tahator_wallet_v2',
+        'tahator_tx_v2',
+        'tahator_sessions_v2',
+        'tahator_notifications_v2',
+        'tahator_offers_v2',
+        'tahator_searches_v2',
+        'tahator_barter_assets_v2',
+        'tahator_user_ads',
+      ].forEach((k) => localStorage.removeItem(k));
     } catch {
       // ignore storage errors
-    }
-
-    const savedProfile = readJsonSafe<UserProfile>(
-      'tahator_profile_v2',
-      (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
-    );
-    const hasStaleMockProfile = savedProfile?.phone === '09123456789';
-
-    if (hasStaleMockProfile) {
-      resetGuestState();
-      try {
-        localStorage.removeItem('tahator_bookmarks');
-      } catch {
-        // ignore storage errors
-      }
-    } else {
-      const savedBookmarks = readJsonSafe<string[]>('tahator_bookmarks', Array.isArray);
-      if (savedBookmarks) setBookmarks(savedBookmarks);
-
-      const savedNotes = readJsonSafe<Record<string, string>>(
-        'tahator_notes',
-        (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
-      );
-      if (savedNotes) setNotes(savedNotes);
-
-      const savedRecent = readJsonSafe<string[]>('tahator_recent', Array.isArray);
-      if (savedRecent) setRecentIds(savedRecent);
-
-      if (savedProfile) setUserProfile(savedProfile);
-
-      const savedAuth = readJsonSafe<boolean>('tahator_auth_v2', (v) => typeof v === 'boolean');
-      if (savedAuth === true) {
-        setIsLoggedIn(true);
-        try {
-          const rawRole = localStorage.getItem('tahator_role_v2');
-          if (rawRole) {
-            setUserRole(normalizeUserRole(rawRole));
-          }
-        } catch {
-          // ignore storage errors
-        }
-      } else {
-        setUserRole('user');
-      }
-
-      const savedWallet = readJsonSafe<number>(
-        'tahator_wallet_v2',
-        (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0
-      );
-      if (savedWallet !== null) setWalletBalance(savedWallet);
-
-      const savedTx = readJsonSafe<WalletTransaction[]>('tahator_tx_v2', Array.isArray);
-      if (savedTx) setTransactions(savedTx);
-
-      const savedOffers = readJsonSafe<BarterOffer[]>('tahator_offers_v2', Array.isArray);
-      if (savedOffers) setBarterOffers(savedOffers);
-
-      const savedSearchesLS = readJsonSafe<SavedSearch[]>('tahator_searches_v2', Array.isArray);
-      if (savedSearchesLS) setSavedSearches(savedSearchesLS);
-
-      const savedAssets = readJsonSafe<BarterAsset[]>('tahator_barter_assets_v2', Array.isArray);
-      if (savedAssets) setBarterAssets(savedAssets);
-
-      const savedNotifs = readJsonSafe<UserNotification[]>('tahator_notifications_v2', Array.isArray);
-      if (savedNotifs) setNotifications(savedNotifs);
-
-      const savedSessions = readJsonSafe<AuthSessionRecord[]>('tahator_sessions_v2', Array.isArray);
-      if (savedSessions && savedSessions.length > 0) setSessions(savedSessions);
     }
 
     const savedAi = readJsonSafe<AiConfig>(
@@ -391,7 +381,48 @@ export default function HomePage() {
 
     void loadPublicCatalog();
     void syncSessionFromBackend();
+
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key === 'tahator_logout_signal') {
+        resetGuestState();
+      }
+    };
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        void syncSessionFromBackend();
+      }
+    };
+    const handleUnauthorizedEvent = () => {
+      resetGuestState();
+    };
+
+    window.addEventListener('storage', handleStorageSync);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('tahator:unauthorized', handleUnauthorizedEvent);
+    return () => {
+      window.removeEventListener('storage', handleStorageSync);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('tahator:unauthorized', handleUnauthorizedEvent);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setShowDashboardModal(false);
+      setShowRolePanelModal(false);
+      setShowPostAdModal(false);
+      setShowChatModal(false);
+      return;
+    }
+
+    const handleFocusRevalidate = () => {
+      void syncSessionFromBackend();
+    };
+    window.addEventListener('focus', handleFocusRevalidate);
+    return () => {
+      window.removeEventListener('focus', handleFocusRevalidate);
+    };
+  }, [isLoggedIn]);
 
   const applyBackendProfile = (p: BackendProfileResponse) => {
     const themeMap = { LIGHT: 'light', DARK: 'dark', SYSTEM: 'system' } as const;
@@ -418,21 +449,17 @@ export default function HomePage() {
         joinedAt: prev.joinedAt || 'فعال',
         lastLoginAt: 'هم‌اکنون',
       };
-      persistSafe('tahator_profile_v2', next);
       return next;
     });
     if (p.wallet?.availableBalance !== undefined) {
       const bal = Number(p.wallet.availableBalance);
       if (Number.isFinite(bal)) {
         setWalletBalance(bal);
-        persistSafe('tahator_wallet_v2', bal);
       }
     }
     const primaryRole = normalizeUserRole(p.dashboards?.[0]?.roleCode);
     setUserRole(primaryRole);
     setIsLoggedIn(true);
-    persistSafe('tahator_auth_v2', true);
-    persistSafe('tahator_role_v2', primaryRole);
   };
 
   const syncSessionFromBackend = async () => {
@@ -532,11 +559,9 @@ export default function HomePage() {
           }))
         );
       }
-    } catch (err) {
-      if (err instanceof ApiClientError && err.status === 401) {
-        resetGuestState();
-        return;
-      }
+    } catch {
+      resetGuestState();
+      return;
     }
   };
 
@@ -1035,9 +1060,13 @@ export default function HomePage() {
   };
 
   const handleSwitchRole = (role: UserRole) => {
+    if (!isLoggedIn) {
+      setShowRolePanelModal(false);
+      setShowAuthModal(true);
+      return;
+    }
     const safeRole = normalizeUserRole(role);
     setUserRole(safeRole);
-    persistSafe('tahator_role_v2', safeRole);
     triggerToast(`نقش فعال به «${getRoleMeta(safeRole).shortTitle}» تغییر یافت`);
   };
 
@@ -1178,27 +1207,39 @@ export default function HomePage() {
         }}
         onLogoClick={() => setShowDashboardModal(false)}
         onOpenCategoriesModal={() => setShowCategoriesModal(true)}
-        onOpenPostAd={() => setShowPostAdModal(true)}
+        onOpenPostAd={() =>
+          requireAuthAction(
+            () => setShowPostAdModal(true),
+            'برای ثبت آگهی ابتدا با شماره موبایل وارد شوید'
+          )
+        }
         onOpenFacilities={() => setShowFacilitiesModal(true)}
         onOpenInstallmentPlan={() => setShowInstallmentModal(true)}
-        onOpenDashboardTab={(tab) => {
-          setDashboardTab(tab);
-          setShowDashboardModal(true);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        onOpenDashboardTab={(tab) =>
+          requireAuthAction(() => {
+            setDashboardTab(tab);
+            setShowDashboardModal(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          })
+        }
         onOpenAuthModal={() => setShowAuthModal(true)}
         onLogout={() => {
-          setIsLoggedIn(false);
-          setUserRole('user');
-          persistSafe('tahator_auth_v2', false);
-          persistSafe('tahator_role_v2', 'user');
-          triggerToast('از حساب کاربری خارج شدید');
+          void handleLogout();
         }}
         onOpenAiAssistant={() => {
           setAiModalTab('chat');
           setShowAiModal(true);
         }}
-        onOpenRolePanel={() => setShowRolePanelModal(true)}
+        onOpenRolePanel={() => {
+          if (!isLoggedIn) {
+            setShowAuthModal(true);
+            triggerToast('برای دسترسی به پنل نقش ابتدا وارد حساب کاربری شوید');
+            return;
+          }
+          if (userRole !== 'user') {
+            setShowRolePanelModal(true);
+          }
+        }}
         onOpenMobileSidebar={() => setShowMobileSidebar(true)}
         bookmarkCount={bookmarks.length}
         isLoggedIn={isLoggedIn}
@@ -1212,7 +1253,7 @@ export default function HomePage() {
         }
       />
 
-      {showDashboardModal ? (
+      {showDashboardModal && isLoggedIn ? (
         <UserDashboardModal
           initialTab={dashboardTab}
           isLoggedIn={isLoggedIn}
@@ -1220,9 +1261,7 @@ export default function HomePage() {
           userRole={userRole}
           onOpenAuthModal={() => setShowAuthModal(true)}
           onLogout={() => {
-            void tahatorApi.logout().catch(() => {});
-            resetGuestState();
-            triggerToast('از حساب کاربری خارج شدید');
+            void handleLogout();
           }}
           onUpdateProfile={(partial) => {
             setUserProfile((prev) => {
@@ -1986,13 +2025,19 @@ export default function HomePage() {
 
         <button
           type="button"
-          onClick={() => {
-            setDashboardTab('bookmarks');
-            setShowDashboardModal(true);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
+          onClick={() =>
+            requireAuthAction(
+              () => {
+                setDashboardTab('bookmarks');
+                setShowDashboardModal(true);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              },
+              'برای مشاهده نشان‌ها و یادداشت‌های شخصی ابتدا وارد حساب کاربری شوید'
+            )
+          }
           className={`flex flex-col items-center gap-0.5 text-[11px] ${
             showDashboardModal &&
+            isLoggedIn &&
             (dashboardTab === 'bookmarks' ||
               dashboardTab === 'notes' ||
               dashboardTab === 'savedSearches')
@@ -2006,7 +2051,12 @@ export default function HomePage() {
 
         <button
           type="button"
-          onClick={() => setShowPostAdModal(true)}
+          onClick={() =>
+            requireAuthAction(
+              () => setShowPostAdModal(true),
+              'برای ثبت آگهی ابتدا با شماره موبایل وارد شوید'
+            )
+          }
           className="flex flex-col items-center -mt-5"
         >
           <span className="w-12 h-12 rounded-full bg-[var(--brand-action)] text-white flex items-center justify-center shadow-lg ring-4 ring-[var(--surface-neutral-weaker)]">
@@ -2029,12 +2079,18 @@ export default function HomePage() {
         <button
           type="button"
           onClick={() => {
+            if (!isLoggedIn) {
+              setShowDashboardModal(false);
+              setShowAuthModal(true);
+              return;
+            }
             setDashboardTab('overview');
             setShowDashboardModal(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           className={`flex flex-col items-center gap-0.5 text-[11px] ${
             showDashboardModal &&
+            isLoggedIn &&
             dashboardTab !== 'bookmarks' &&
             dashboardTab !== 'notes' &&
             dashboardTab !== 'savedSearches'
@@ -2238,9 +2294,6 @@ export default function HomePage() {
             setUserProfile(nextProfile);
             setIsLoggedIn(true);
             setUserRole(safeRole);
-            persistSafe('tahator_profile_v2', nextProfile);
-            persistSafe('tahator_auth_v2', true);
-            persistSafe('tahator_role_v2', safeRole);
             setForceOnboarding(false);
             void syncSessionFromBackend();
 
@@ -2277,7 +2330,6 @@ export default function HomePage() {
                 time: s.isCurrent ? 'نشست قبلی' : s.time,
               }));
               const next = [nextSession, ...prevDemoted].slice(0, 5);
-              persistSafe('tahator_sessions_v2', next);
               return next;
             });
 
@@ -2291,11 +2343,7 @@ export default function HomePage() {
                 time: 'هم‌اکنون',
                 read: false,
               };
-              setNotifications((prev) => {
-                const next = [welcomeNotif, ...prev];
-                persistSafe('tahator_notifications_v2', next);
-                return next;
-              });
+              setNotifications((prev) => [welcomeNotif, ...prev]);
             }
 
             setDashboardTab('overview');
@@ -2311,7 +2359,7 @@ export default function HomePage() {
       )}
 
       {/* Multi-Role Control Center Modal (Admin -> Support) */}
-      {showRolePanelModal && (
+      {showRolePanelModal && isLoggedIn && userRole !== 'user' && (
         <RolePanelModal
           activeRole={userRole}
           onSwitchRole={handleSwitchRole}

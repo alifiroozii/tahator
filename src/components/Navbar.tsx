@@ -452,13 +452,11 @@ export default function Navbar({
                 <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--brand-action)] text-white text-[10px] font-bold flex items-center justify-center">
                   {toPersianDigits(unreadNotifications + pendingOffersCount)}
                 </span>
-              ) : (
-                bookmarkCount > 0 && (
-                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold flex items-center justify-center">
-                    {toPersianDigits(bookmarkCount)}
-                  </span>
-                )
-              )}
+              ) : isLoggedIn && bookmarkCount > 0 ? (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold flex items-center justify-center">
+                  {toPersianDigits(bookmarkCount)}
+                </span>
+              ) : null}
               <ChevronDown className="w-3.5 h-3.5 text-[var(--content-neutral-default)] shrink-0" />
             </button>
 
@@ -484,73 +482,9 @@ export default function Navbar({
                         </div>
                       </div>
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        onOpenDashboardTab('business');
-                      }}
-                      className="w-full px-4 py-2.5 text-right text-[13px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2.5 border-b border-[var(--border-neutral-weaker)]"
-                    >
-                      <Star className="w-4 h-4 text-[var(--content-neutral-default)]" />
-                      <span>حساب کسب‌وکار تهاتر</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        onOpenDashboardTab('bookmarks');
-                      }}
-                      className="w-full px-4 py-2.5 text-right text-[13px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center justify-between border-b border-[var(--border-neutral-weaker)]"
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <Bookmark className="w-4 h-4 text-[var(--content-neutral-default)]" />
-                        <span>نشان‌ها</span>
-                      </span>
-                      {bookmarkCount > 0 && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold">
-                          {toPersianDigits(bookmarkCount)}
-                        </span>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        onOpenDashboardTab('recent');
-                      }}
-                      className="w-full px-4 py-2.5 text-right text-[13px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2.5 border-b border-[var(--border-neutral-weaker)]"
-                    >
-                      <Clock className="w-4 h-4 text-[var(--content-neutral-default)]" />
-                      <span>بازدیدهای اخیر</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        onOpenDashboardTab('safety');
-                      }}
-                      className="w-full px-4 py-2.5 text-right text-[13px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2.5 border-b border-[var(--border-neutral-weaker)]"
-                    >
-                      <ShieldAlert className="w-4 h-4 text-[var(--content-neutral-default)]" />
-                      <span>مقابله با مزاحمت و کلاهبرداری</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        onOpenDashboardTab('settings');
-                      }}
-                      className="w-full px-4 py-2.5 text-right text-[13px] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)] flex items-center gap-2.5"
-                    >
-                      <Settings className="w-4 h-4 text-[var(--content-neutral-default)]" />
-                      <span>تنظیمات و حریم خصوصی</span>
-                    </button>
+                    <div className="px-4 py-2.5 text-[11px] leading-5 text-[var(--content-neutral-default)] bg-[var(--surface-neutral-subtle)]">
+                      برای مشاهده پروفایل، آگهی‌های من، کیف‌پول و داشبورد ابتدا وارد حساب کاربری شوید.
+                    </div>
                   </>
                 ) : (
                   <>

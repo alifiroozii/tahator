@@ -246,6 +246,10 @@ export default function UserDashboardModal({
     setCallHours(user.allowCallHours || '۹:۰۰ تا ۲۱:۰۰');
   }, [user]);
 
+  if (!isLoggedIn) {
+    return null;
+  }
+
   const noteCount = Object.values(notes).filter((txt) => txt.trim().length > 0).length;
   const pendingOffersCount = barterOffers.filter(
     (o) => o.direction === 'received' && o.status === 'pending'

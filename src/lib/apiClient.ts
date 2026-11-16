@@ -144,6 +144,17 @@ async function apiRequest<T>(
     if (refreshed) {
       return apiRequest<T>(path, options, false);
     }
+    if (typeof window !== 'undefined' && !path.startsWith('/auth/logout')) {
+      window.dispatchEvent(new Event('tahator:unauthorized'));
+    }
+  } else if (
+    res.status === 401 &&
+    !path.startsWith('/auth/otp/') &&
+    !path.startsWith('/auth/refresh') &&
+    !path.startsWith('/auth/logout') &&
+    typeof window !== 'undefined'
+  ) {
+    window.dispatchEvent(new Event('tahator:unauthorized'));
   }
 
   let data: unknown = null;
