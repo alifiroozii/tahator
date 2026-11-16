@@ -82,9 +82,10 @@ export default function AuthOtpModal({
           showInSidebar: c.showInSidebar,
         }));
 
+  const defaultInitialPhone = initialPhone || '09128416047';
   const [step, setStep] = useState<'phone' | 'otp' | 'onboarding'>(initialStep);
   const [phoneDigits, setPhoneDigits] = useState<string>(
-    normalizeDigits(initialPhone).replace(/\D/g, '').slice(0, 15)
+    normalizeDigits(defaultInitialPhone).replace(/\D/g, '').slice(0, 15)
   );
   const [phoneError, setPhoneError] = useState<string>('');
   const [showTerms, setShowTerms] = useState<'tos' | 'privacy' | null>(null);
@@ -99,6 +100,9 @@ export default function AuthOtpModal({
   const [isVerifyingOtp, setIsVerifyingOtp] = useState<boolean>(false);
   const [isSavingOnboarding, setIsSavingOnboarding] = useState<boolean>(false);
   const [onboardingError, setOnboardingError] = useState<string>('');
+  const [serverOtpMessage, setServerOtpMessage] = useState<string>('');
+  const [demoOtpCode, setDemoOtpCode] = useState<string>('');
+  const [isSimulatedMode, setIsSimulatedMode] = useState<boolean>(false);
   const [verifiedServerUser, setVerifiedServerUser] = useState<{
     sessionId: string;
     isVerified: boolean;
@@ -157,6 +161,9 @@ export default function AuthOtpModal({
       setOtpError('');
       setOtpSuccessFlash(false);
       setResendSeconds(res.expiresInSeconds || 180);
+      setServerOtpMessage(res.message || '');
+      setIsSimulatedMode(Boolean(res.isSimulated || res.demoCode));
+      setDemoOtpCode(res.demoCode || '');
       setStep('otp');
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -316,6 +323,30 @@ export default function AuthOtpModal({
                 </p>
               </div>
 
+              <div className="p-3.5 rounded-[8px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-[var(--content-neutral-default)] font-medium">
+                    شماره اختصاصی و تاییدشده سامانه:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhoneDigits('09128416047');
+                      setPhoneError('');
+                    }}
+                    className="font-bold text-[var(--brand-primary)] hover:underline dir-ltr text-[13px]"
+                  >
+                    ۰۹۱۲ ۸۴۱ ۶۰۴۷
+                  </button>
+                </div>
+                <div className="text-[11px] leading-5 text-[var(--content-neutral-default)] flex items-start gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[var(--semantic-positive)] shrink-0 mt-0.5" />
+                  <span>
+                    ارسال واقعی پیامک فقط به شماره تاییدشده <b>۰۹۱۲۸۴۱۶۰۴۷</b> صورت می‌گیرد. جهت جلوگیری از مزاحمت و ارسال اشتباه، سایر شماره‌ها به صورت <b>شبیه‌سازی امن (Sandbox)</b> کد دریافت می‌کنند تا پیامکی به فرد دیگری ارسال نشود.
+                  </span>
+                </div>
+              </div>
+
               <div>
                 <div className="relative flex items-center" dir="ltr">
                   <span className="absolute left-3 px-2 py-0.5 rounded bg-[var(--surface-neutral-subtle)] text-[12px] font-bold text-[var(--content-neutral-default)] border border-[var(--border-neutral-weaker)]">
@@ -417,12 +448,36 @@ export default function AuthOtpModal({
                 </button>
               </div>
 
-              <div className="rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] p-3 flex items-center gap-2.5 text-[12px] text-[var(--content-neutral-default)]">
-                <MessageSquareText className="w-4 h-4 text-[var(--brand-primary)] shrink-0" />
-                <span>
-                  پیامک حاوی کد تایید ارسال شده است. پس از دریافت، کد عددی را در کادر زیر وارد کنید.
-                </span>
-              </div>
+              {demoOtpCode ? (
+                <div className="p-3.5 rounded-[8px] bg-[var(--brand-soft)] border border-[var(--brand-action)]/30 text-[12px] space-y-2">
+                  <div className="flex items-center justify-between font-bold text-[var(--brand-primary)]">
+                    <span>کد تایید شبیه‌سازی‌شده (بدون ارسال پیامک به افراد):</span>
+                    <span className="font-extrabold text-[15px] tracking-wider dir-ltr bg-white px-2.5 py-0.5 rounded border border-[var(--brand-action)]/30">
+                      {toPersianDigits(demoOtpCode)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-5 text-[var(--content-neutral-default)]">
+                    چون شماره انتخابی، شماره اختصاصی تاییدشده نیست، جهت جلوگیری از ایجاد مزاحمت پیامکی برای دیگران، کد به صورت شبیه‌سازی امن تولید شد.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpInput(demoOtpCode);
+                      void submitOtpVerification(demoOtpCode);
+                    }}
+                    className="w-full py-2 rounded-[6px] bg-[var(--brand-primary)] text-white text-[12px] font-bold hover:opacity-90 transition-opacity"
+                  >
+                    درج خودکار کد شبیه‌سازی ({toPersianDigits(demoOtpCode)}) و ورود
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-[8px] border border-[var(--semantic-positive)]/30 bg-[var(--semantic-positive-soft)]/40 p-3 flex items-center gap-2.5 text-[12px] text-[var(--semantic-positive)] font-medium">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>
+                    {serverOtpMessage || 'کد تایید پیامکی از خط خدماتی ملی‌پیامک به شماره ۰۹۱۲۸۴۱۶۰۴۷ ارسال شد.'}
+                  </span>
+                </div>
+              )}
 
               <div>
                 <div className="flex items-center justify-between mb-2">

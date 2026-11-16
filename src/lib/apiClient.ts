@@ -186,6 +186,8 @@ export const tahatorApi = {
       success: boolean;
       message: string;
       expiresInSeconds: number;
+      isSimulated?: boolean;
+      demoCode?: string;
     }>('/auth/otp/request', {
       method: 'POST',
       body: JSON.stringify({ phone }),

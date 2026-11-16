@@ -2256,7 +2256,7 @@ export default function HomePage() {
       {/* Mobile OTP Unified Login Modal */}
       {showAuthModal && (
         <AuthOtpModal
-          initialPhone={isLoggedIn ? userProfile.phone : ''}
+          initialPhone={isLoggedIn ? userProfile.phone : '09128416047'}
           initialStep={forceOnboarding ? 'onboarding' : 'phone'}
           initialFullName={
             forceOnboarding &&
