@@ -82,7 +82,7 @@ export default function AuthOtpModal({
           showInSidebar: c.showInSidebar,
         }));
 
-  const defaultInitialPhone = initialPhone || '09128416047';
+  const defaultInitialPhone = initialPhone || '';
   const [step, setStep] = useState<'phone' | 'otp' | 'onboarding'>(initialStep);
   const [phoneDigits, setPhoneDigits] = useState<string>(
     normalizeDigits(defaultInitialPhone).replace(/\D/g, '').slice(0, 15)
@@ -323,30 +323,6 @@ export default function AuthOtpModal({
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-[8px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2">
-                <div className="flex items-center justify-between text-[12px]">
-                  <span className="text-[var(--content-neutral-default)] font-medium">
-                    شماره اختصاصی و تاییدشده سامانه:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhoneDigits('09128416047');
-                      setPhoneError('');
-                    }}
-                    className="font-bold text-[var(--brand-primary)] hover:underline dir-ltr text-[13px]"
-                  >
-                    ۰۹۱۲ ۸۴۱ ۶۰۴۷
-                  </button>
-                </div>
-                <div className="text-[11px] leading-5 text-[var(--content-neutral-default)] flex items-start gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[var(--semantic-positive)] shrink-0 mt-0.5" />
-                  <span>
-                    ارسال واقعی پیامک فقط به شماره تاییدشده <b>۰۹۱۲۸۴۱۶۰۴۷</b> صورت می‌گیرد. جهت جلوگیری از مزاحمت و ارسال اشتباه، سایر شماره‌ها به صورت <b>شبیه‌سازی امن (Sandbox)</b> کد دریافت می‌کنند تا پیامکی به فرد دیگری ارسال نشود.
-                  </span>
-                </div>
-              </div>
-
               <div>
                 <div className="relative flex items-center" dir="ltr">
                   <span className="absolute left-3 px-2 py-0.5 rounded bg-[var(--surface-neutral-subtle)] text-[12px] font-bold text-[var(--content-neutral-default)] border border-[var(--border-neutral-weaker)]">
@@ -359,7 +335,7 @@ export default function AuthOtpModal({
                     dir="ltr"
                     value={phoneDigits}
                     onChange={(e) => handlePhoneInputChange(e.target.value)}
-                    placeholder="9128416047 یا 0912..."
+                    placeholder="۰۹xxxxxxxxx"
                     className={`kt-input !h-[46px] !pl-16 !pr-4 text-left font-bold tracking-[0.06em] text-[15px] ${
                       phoneError ? '!border-[var(--brand-primary)]' : ''
                     }`}
@@ -474,7 +450,7 @@ export default function AuthOtpModal({
                 <div className="rounded-[8px] border border-[var(--semantic-positive)]/30 bg-[var(--semantic-positive-soft)]/40 p-3 flex items-center gap-2.5 text-[12px] text-[var(--semantic-positive)] font-medium">
                   <ShieldCheck className="w-4 h-4 shrink-0" />
                   <span>
-                    {serverOtpMessage || 'کد تایید پیامکی از خط خدماتی ملی‌پیامک به شماره ۰۹۱۲۸۴۱۶۰۴۷ ارسال شد.'}
+                    {serverOtpMessage || 'کد تایید یک‌بار مصرف از طریق پیامک ارسال شد.'}
                   </span>
                 </div>
               )}
