@@ -44,6 +44,8 @@ export default function PublicPageShell({
             <nav className="hidden md:flex items-center gap-1 text-[13px] font-medium mr-3">
               {[
                 { href: '/', label: 'آگهی‌های تهاتر' },
+                { href: '/facilities', label: 'تسهیلات ۵۰/۵۰' },
+                { href: '/ai', label: 'هوش مصنوعی' },
                 { href: '/blog', label: 'مجله و وبلاگ' },
                 { href: '/about', label: 'درباره ما' },
                 { href: '/faq', label: 'سوالات متداول' },
@@ -90,6 +92,12 @@ export default function PublicPageShell({
             <span>سامانه هوشمند تهاتر و معاوضه املاک، خودرو و موتورسیکلت (tahator.app)</span>
           </div>
           <div className="flex flex-wrap items-center gap-4">
+            <Link href="/facilities" className="hover:text-[var(--brand-primary)]">
+              تسهیلات ۵۰/۵۰
+            </Link>
+            <Link href="/ai" className="hover:text-[var(--brand-primary)]">
+              هوش مصنوعی
+            </Link>
             <Link href="/blog" className="hover:text-[var(--brand-primary)] flex items-center gap-1">
               <BookOpen className="w-3.5 h-3.5" />
               <span>وبلاگ</span>

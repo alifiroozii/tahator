@@ -338,7 +338,7 @@ export const tahatorApi = {
   getListingsMeta() {
     return apiRequest<{
       categories: { id: string; slug: string; name: string; emoji: string; sortOrder: number; showInSidebar: boolean }[];
-      cities: { id: string; slug: string; name: string; province: string; isPopular: boolean; adCount: number }[];
+      cities: { id: string; slug: string; name: string; province: string; isPopular: boolean; adCount?: number }[];
     }>('/listings/meta');
   },
 
@@ -424,10 +424,17 @@ export const tahatorApi = {
   updateMyListing(
     id: string,
     payload: {
+      categoryId?: string;
+      categoryName?: string;
+      subcategory?: string;
+      cityId?: string;
+      cityName?: string;
       title?: string;
       description?: string;
       price?: number;
       priceLabel?: string;
+      isNegotiable?: boolean;
+      contactPhone?: string;
       neighborhood?: string;
       streetHint?: string;
       hasExchange?: boolean;
@@ -1136,5 +1143,41 @@ export const tahatorApi = {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (action) qs.set('action', action);
     return apiRequest<Array<Record<string, unknown>>>(`/audit-logs?${qs.toString()}`);
+  },
+
+  queryAiAssistant(payload: { message: string; listingId?: string; months?: number }) {
+    return apiRequest<{
+      replyFa: string;
+      supportPhoneFa: string;
+      installmentSummary: {
+        totalAmount: number;
+        totalAmountFa: string;
+        downOrBarterFa: string;
+        loanPrincipalFa: string;
+        months: number;
+        monthsFa: string;
+        ratePercentFa: string;
+        monthlyInstallment: number;
+        monthlyInstallmentFa: string;
+        totalPayableFa: string;
+      };
+      suggestedListings: Array<{
+        id: string;
+        code: string;
+        title: string;
+        category: string;
+        city: string;
+        neighborhood: string;
+        price: number;
+        priceFa: string;
+        hasExchange: boolean;
+        monthlyEstFa: string;
+        monthsFa: string;
+        image: string;
+      }>;
+    }>('/ai/assistant', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 };

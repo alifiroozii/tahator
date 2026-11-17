@@ -594,8 +594,16 @@ export default function Sidebar({
           <span className="font-bold dir-ltr">{toPersianDigits('02191016487')}</span>
         </button>
 
-        {/* Navigation Links to Blog & Informational Pages */}
-        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[11px] font-medium text-[var(--content-neutral-default)] pt-1">
+        {/* Navigation Links to Blog, AI, Facilities & Informational Pages */}
+        <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1.5 text-[11px] font-medium text-[var(--content-neutral-default)] pt-1">
+          <Link href="/facilities" className="hover:text-[var(--brand-primary)] transition-colors">
+            تسهیلات ۵۰/۵۰
+          </Link>
+          <span className="text-[var(--border-neutral-weak)]">•</span>
+          <Link href="/ai" className="hover:text-[var(--brand-primary)] transition-colors">
+            هوش مصنوعی
+          </Link>
+          <span className="text-[var(--border-neutral-weak)]">•</span>
           <Link href="/blog" className="hover:text-[var(--brand-primary)] transition-colors">
             مجله و وبلاگ
           </Link>

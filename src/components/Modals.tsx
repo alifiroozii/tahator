@@ -35,11 +35,13 @@ import {
   formatToman,
   toPersianDigits,
 } from '@/data/mockData';
+import { IRAN_PROVINCES_LIST } from '@/data/iranLocations';
 import {
   AiConfig,
   DEFAULT_AI_CONFIG,
   analyzeChatSafety,
   autoCompleteDraftAd,
+  estimateMarketPriceByForm,
   generateSmartChatReplies,
   normalizeDigits,
 } from '@/lib/offlineAi';
@@ -157,16 +159,29 @@ interface CityModalProps {
 export function CityModal({ selectedCities, onConfirmCities, onClose }: CityModalProps) {
   const [draft, setDraft] = useState<string[]>(selectedCities);
   const [query, setQuery] = useState('');
+  const [selectedProvince, setSelectedProvince] = useState<string>('همه استان‌ها');
 
-  const filteredCities = CITIES.filter(
-    (c) =>
-      c.name.includes(query.trim()) ||
-      c.province.includes(query.trim())
-  );
+  const filteredCities = CITIES.filter((c) => {
+    const q = query.trim();
+    const matchesQuery = !q || c.name.includes(q) || c.province.includes(q);
+    const matchesProv =
+      selectedProvince === 'همه استان‌ها' || c.province === selectedProvince;
+    return matchesQuery && matchesProv;
+  });
 
   const toggleCity = (cityName: string) => {
     setDraft((prev) =>
       prev.includes(cityName) ? prev.filter((c) => c !== cityName) : [...prev, cityName]
+    );
+  };
+
+  const toggleWholeProvince = (prov: string) => {
+    const provCities = CITIES.filter((c) => c.province === prov).map((c) => c.name);
+    const allSelected = provCities.every((name) => draft.includes(name));
+    setDraft((prev) =>
+      allSelected
+        ? prev.filter((name) => !provCities.includes(name))
+        : Array.from(new Set([...prev, ...provCities]))
     );
   };
 
@@ -224,14 +239,42 @@ export function CityModal({ selectedCities, onConfirmCities, onClose }: CityModa
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="جستجو در شهرها و استان‌ها..."
+              placeholder="جستجو در شهرها و ۳۱ استان ایران..."
               className="kt-input pr-9"
             />
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 max-h-[96px] overflow-y-auto pb-1">
+            <button
+              type="button"
+              onClick={() => setSelectedProvince('همه استان‌ها')}
+              className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+                selectedProvince === 'همه استان‌ها'
+                  ? 'border-[var(--brand-action)] bg-[var(--brand-action)] text-white'
+                  : 'border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] text-[var(--content-neutral-stronger)] hover:bg-[var(--surface-neutral-weak)]'
+              }`}
+            >
+              همه ۳۱ استان
+            </button>
+            {IRAN_PROVINCES_LIST.map((prov) => (
+              <button
+                key={prov}
+                type="button"
+                onClick={() => setSelectedProvince(prov)}
+                className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                  selectedProvince === prov
+                    ? 'border-[var(--brand-action)] bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold'
+                    : 'border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] text-[var(--content-neutral-default)] hover:bg-[var(--surface-neutral-weak)]'
+                }`}
+              >
+                {prov}
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="p-4 overflow-y-auto flex-1 space-y-4">
-          {!query && (
+          {!query && selectedProvince === 'همه استان‌ها' && (
             <div>
               <div className="text-[12px] font-bold text-[var(--content-neutral-default)] mb-2">
                 شهرهای پربازدید
@@ -259,8 +302,19 @@ export function CityModal({ selectedCities, onConfirmCities, onClose }: CityModa
           )}
 
           <div>
-            <div className="text-[12px] font-bold text-[var(--content-neutral-default)] mb-2">
-              فهرست کامل شهرها ({toPersianDigits(filteredCities.length)} شهر)
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="text-[12px] font-bold text-[var(--content-neutral-default)]">
+                فهرست شهرها ({toPersianDigits(filteredCities.length)} شهر در {toPersianDigits(IRAN_PROVINCES_LIST.length)} استان)
+              </div>
+              {selectedProvince !== 'همه استان‌ها' && (
+                <button
+                  type="button"
+                  onClick={() => toggleWholeProvince(selectedProvince)}
+                  className="text-[11px] font-bold text-[var(--brand-primary)] hover:underline"
+                >
+                  انتخاب/لغو همه شهرهای {selectedProvince}
+                </button>
+              )}
             </div>
             <div className="divide-y divide-[var(--border-neutral-weaker)]">
               {filteredCities.map((city) => {
@@ -358,7 +412,7 @@ export function PostAdModal({
   });
   const [isApproximateLoc, setIsApproximateLoc] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [hasExchange, setHasExchange] = useState(true);
+  const [hasExchange, setHasExchange] = useState(false);
   const [exchangeWith, setExchangeWith] = useState('');
   const [hasInstallmentPlan, setHasInstallmentPlan] = useState(true);
   const [description, setDescription] = useState('');
@@ -569,7 +623,7 @@ export function PostAdModal({
                 </button>
               </div>
               {aiAuditHint && (
-                <div className="text-[11px] text-[var(--content-neutral-stronger)] space-y-1 bg-white/80 p-2 rounded">
+                <div className="text-[11px] text-[var(--content-neutral-stronger)] space-y-1 bg-[var(--surface-neutral-default)] p-2 rounded">
                   <div className="font-bold text-[var(--semantic-positive)]">
                     شانس تایید فوری ناظر: {toPersianDigits(aiAuditHint.approvalChance)}٪
                   </div>
@@ -631,7 +685,7 @@ export function PostAdModal({
               >
                 {CITIES.map((c) => (
                   <option key={c.id} value={c.name}>
-                    {c.name}
+                    {c.name} ({c.province})
                   </option>
                 ))}
               </select>
@@ -652,16 +706,46 @@ export function PostAdModal({
             </div>
           </div>
 
-          {/* قیمت (تومان) */}
+          {/* قیمت (تومان) + راهنمای آنلاین قیمت هوشمند مشابه دیوار */}
           <div>
             <label className="block text-[13px] font-medium mb-1">قیمت (تومان)</label>
             <input
               type="text"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              placeholder="مثلاً: ۵٬۰۰۰٬۰۰۰"
+              placeholder="مثلاً: ۵٬۰۰۰٬۰۰۰٬۰۰۰"
               className="kt-input text-left dir-ltr"
             />
+            {(() => {
+              const est = estimateMarketPriceByForm({
+                category,
+                subcategory,
+                city,
+                neighborhood,
+                condition: 'like-new',
+                areaOrSpec: title,
+              });
+              const rawNum = Number(normalizeDigits(price).replace(/[^0-9]/g, '')) || 0;
+              return (
+                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] px-2.5 py-1.5 rounded-[4px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)]">
+                  <span className="text-[var(--content-neutral-default)] flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-[var(--brand-action)] shrink-0" />
+                    <span>
+                      بازه هوشمند تهاتر برای {category} در {city}: {formatToman(est.minFair)} تا {formatToman(est.maxFair)}
+                    </span>
+                  </span>
+                  {rawNum > 0 && (
+                    <span className="font-bold text-[var(--semantic-warning)]">
+                      {rawNum >= est.minFair && rawNum <= est.maxFair
+                        ? 'قیمت منصفانه (مناسب تهاتر/اقساط)'
+                        : rawNum < est.minFair
+                          ? 'فروش فوری / زیر میانگین'
+                          : 'بالاتر از میانگین پیشنهادی'}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* شماره تماس اول * و کد ملی (اختیاری) */}

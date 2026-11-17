@@ -1,14 +1,18 @@
 import type { MetadataRoute } from 'next';
 import { fetchBackendPublic } from '@/lib/serverApi';
+import { getSiteBaseUrl } from '@/lib/seo';
+import { IRAN_PROVINCE_CITIES } from '@/data/iranLocations';
 
 export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://tahator.app').replace(/\/$/, '');
+  const baseUrl = getSiteBaseUrl();
   const now = new Date();
 
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${baseUrl}/`, lastModified: now, changeFrequency: 'hourly', priority: 1.0 },
+    { url: `${baseUrl}/facilities`, lastModified: now, changeFrequency: 'daily', priority: 0.95 },
+    { url: `${baseUrl}/ai`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
     { url: `${baseUrl}/blog`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
     { url: `${baseUrl}/about`, lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
     { url: `${baseUrl}/faq`, lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
@@ -17,10 +21,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const [blogRes, listingsRes] = await Promise.all([
     fetchBackendPublic<{ items: Array<{ slug: string; publishedAt?: string | null }> }>(
-      '/blog/posts?limit=50'
+      '/blog/posts?limit=100'
     ),
     fetchBackendPublic<{ items: Array<{ code: string; updatedAt?: string | null }> }>(
-      '/listings?limit=150'
+      '/listings?limit=500'
     ),
   ]);
 
@@ -35,8 +39,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: `${baseUrl}/ads/${encodeURIComponent(ad.code)}`,
     lastModified: ad.updatedAt ? new Date(ad.updatedAt) : now,
     changeFrequency: 'daily',
-    priority: 0.75,
+    priority: 0.85,
   }));
 
-  return [...staticRoutes, ...blogEntries, ...listingEntries];
+  const cityEntries: MetadataRoute.Sitemap = IRAN_PROVINCE_CITIES.filter((c) => c.popular).map((c) => ({
+    url: `${baseUrl}/?city=${encodeURIComponent(c.name)}`,
+    lastModified: now,
+    changeFrequency: 'daily',
+    priority: 0.7,
+  }));
+
+  return [...staticRoutes, ...blogEntries, ...listingEntries, ...cityEntries];
 }

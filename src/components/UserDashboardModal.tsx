@@ -49,7 +49,7 @@ import {
   WalletTransaction,
   computeProfileMetrics,
 } from '@/types/platform';
-import MyAdsSection, { ArchivedAdEntry } from '@/components/dashboard/MyAdsSection';
+import MyAdsSection, { ArchivedAdEntry, EditableListingFields } from '@/components/dashboard/MyAdsSection';
 import { BarterAssetsSection, BarterOffersSection } from '@/components/dashboard/BarterWorkflowSection';
 import BookmarksNotesSection from '@/components/dashboard/BookmarksNotesSection';
 
@@ -86,10 +86,7 @@ interface UserDashboardModalProps {
   onLadderAd: (id: string) => void;
   onUrgentAd: (id: string) => void;
   onRenewAd: (id: string) => void;
-  onEditAd: (
-    id: string,
-    updates: { title: string; price: number; hasExchange: boolean; exchangeWith: string; description: string }
-  ) => void;
+  onEditAd: (id: string, updates: EditableListingFields) => void;
   onDeleteAd: (id: string, reason: string) => void;
   onPinLocationAd?: (ad: Listing) => void;
   barterAssets: BarterAsset[];
@@ -564,12 +561,12 @@ export default function UserDashboardModal({
                         {isLoggedIn ? toPersianDigits(user.phone) : 'شماره موبایل ثبت نشده'}
                       </span>
                       <span>· شهر: {user.city || 'تهران'}</span>
-                      <span>· فعال‌سازی: {user.joinedAt}</span>
+                      <span>· فعال‌سازی: {toPersianDigits(user.joinedAt)}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 bg-white px-4 py-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)]">
+                <div className="flex items-center gap-3 shrink-0 bg-[var(--surface-neutral-default)] px-4 py-2.5 rounded-[8px] border border-[var(--border-neutral-weaker)]">
                   <Award className="w-6 h-6 text-[var(--semantic-positive)] shrink-0" />
                   <div>
                     <div className="text-[11px] text-[var(--content-neutral-default)]">
@@ -583,7 +580,7 @@ export default function UserDashboardModal({
               </div>
 
               {/* Completeness Checklist */}
-              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-3">
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
                     آمادگی حساب برای معاملات تهاتر و اقساط ۵۰/۵۰ ({toPersianDigits(profileMetrics.completionPercent)}٪)
@@ -632,7 +629,7 @@ export default function UserDashboardModal({
                 <button
                   type="button"
                   onClick={() => selectSidebarTab('myAds')}
-                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] hover:border-[var(--brand-action)] text-right transition-colors"
                 >
                   <div className="text-[11px] text-[var(--content-neutral-default)]">آگهی‌های جاری من</div>
                   <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
@@ -646,7 +643,7 @@ export default function UserDashboardModal({
                 <button
                   type="button"
                   onClick={() => selectSidebarTab('barterAssets')}
-                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-right transition-colors"
+                  className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] hover:border-[var(--brand-action)] text-right transition-colors"
                 >
                   <div className="text-[11px] text-[var(--content-neutral-default)]">سبد دارایی‌های تهاتر</div>
                   <div className="text-[18px] font-extrabold text-[var(--content-neutral-stronger)] mt-1">
@@ -976,7 +973,7 @@ export default function UserDashboardModal({
                     <select
                       value={profCity}
                       onChange={(e) => setProfCity(e.target.value)}
-                      className="kt-input bg-white"
+                      className="kt-input bg-[var(--surface-neutral-default)]"
                     >
                       {CITIES.map((c) => (
                         <option key={c.id} value={c.name}>
@@ -1230,7 +1227,7 @@ export default function UserDashboardModal({
               {installmentRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5"
+                  className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] space-y-2.5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-bold text-[14px]">{req.listingTitle}</span>

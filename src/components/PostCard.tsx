@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   Camera,
   Video,
@@ -34,9 +35,17 @@ export default function PostCard({
     listing.specs && listing.specs.length > 0
       ? listing.specs
           .slice(0, 2)
-          .map((s) => `${s.label}: ${s.value}`)
+          .map((s) => `${s.label}: ${toPersianDigits(s.value)}`)
           .join(' · ')
       : listing.subcategory;
+  const adHref = `/ads/${encodeURIComponent(listing.code)}`;
+  const handleTitleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      onSelect(listing);
+    }
+  };
 
   const primaryPriceDisplay = () => {
     if (listing.deposit && listing.rent) {
@@ -137,7 +146,9 @@ export default function PostCard({
         <div className="p-3.5 flex flex-col flex-1 justify-between gap-2">
           <div>
             <h3 className="text-[14px] sm:text-[15px] font-bold leading-[23px] text-[var(--content-neutral-stronger)] line-clamp-2">
-              {listing.title}
+              <Link href={adHref} onClick={handleTitleLinkClick} className="hover:text-[var(--brand-action)] transition-colors">
+                {toPersianDigits(listing.title)}
+              </Link>
             </h3>
             {specLine && (
               <div className="text-[11px] text-[var(--content-neutral-default)] mt-1 truncate">
@@ -149,7 +160,7 @@ export default function PostCard({
           <div className="space-y-1.5">
             {listing.hasExchange && listing.exchangeWith && (
               <div className="text-[11px] text-[var(--brand-primary)] bg-[var(--brand-soft)] px-2 py-0.5 rounded-[4px] truncate">
-                معاوضه با: {listing.exchangeWith}
+                معاوضه با: {toPersianDigits(listing.exchangeWith)}
               </div>
             )}
             <div className="flex items-center justify-between gap-2">
@@ -177,7 +188,7 @@ export default function PostCard({
               <span className="truncate">
                 {listing.city} · {listing.neighborhood}
               </span>
-              <span className="shrink-0">{listing.publishedAt}</span>
+              <span className="shrink-0">{toPersianDigits(listing.publishedAt)}</span>
             </div>
           </div>
         </div>
@@ -194,7 +205,9 @@ export default function PostCard({
       <div className="flex flex-col flex-1 min-w-0 justify-between">
         <div>
           <h2 className="text-[14px] sm:text-[16px] font-semibold leading-[23px] sm:leading-[26px] text-[var(--content-neutral-stronger)] line-clamp-2 group-hover:text-[var(--brand-action)] transition-colors">
-            {listing.title}
+            <Link href={adHref} onClick={handleTitleLinkClick}>
+              {toPersianDigits(listing.title)}
+            </Link>
           </h2>
           {specLine && (
             <div className="text-[11px] text-[var(--content-neutral-default)] mt-1 truncate">
@@ -209,7 +222,7 @@ export default function PostCard({
             <div className="flex items-center gap-1 text-[11px] sm:text-[12px] text-[var(--brand-primary)] truncate">
               <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">
-                {listing.exchangeWith ? `معاوضه: ${listing.exchangeWith}` : 'امکان معاوضه دارد'}
+                {listing.exchangeWith ? `معاوضه: ${toPersianDigits(listing.exchangeWith)}` : 'امکان معاوضه دارد'}
               </span>
             </div>
           )}
@@ -244,7 +257,7 @@ export default function PostCard({
             <div className="flex items-center gap-1.5 min-w-0 truncate">
               {listing.badge && (
                 <span className="text-[var(--brand-action)] font-medium shrink-0">
-                  {listing.badge}
+                  {toPersianDigits(listing.badge)}
                 </span>
               )}
               {listing.isVerifiedPhotos && (
@@ -254,7 +267,7 @@ export default function PostCard({
                 />
               )}
               <span className="text-[var(--content-neutral-default)] truncate">
-                {listing.city} · {listing.publishedAt}
+                {listing.city} · {toPersianDigits(listing.publishedAt)}
               </span>
             </div>
 

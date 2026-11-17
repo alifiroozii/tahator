@@ -32,12 +32,13 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { Listing, formatToman, toPersianDigits } from '@/data/mockData';
+import ShareActionsBar from '@/components/ShareActionsBar';
+import InlineAdAiSection from '@/components/InlineAdAiSection';
 import {
   AiConfig,
   DEFAULT_AI_CONFIG,
   evaluateListingPrice,
   generateBarterAgreementDraft,
-  generateSmartListingSummary,
   getRelatedListings,
   matchBarterListings,
   normalizeDigits,
@@ -139,7 +140,8 @@ export default function AdDetailModal({
   };
 
   const handleShare = () => {
-    const shareText = `${listing.title} - ${window.location.origin}/?ad=${listing.id}`;
+    const url = `${window.location.origin}/ads/${encodeURIComponent(listing.code)}`;
+    const shareText = `${toPersianDigits(listing.title)} - ${url}`;
     navigator.clipboard?.writeText(shareText).catch(() => {});
     setCopiedShare(true);
     setTimeout(() => setCopiedShare(false), 2200);
@@ -148,11 +150,6 @@ export default function AdDetailModal({
   const priceEval = useMemo(
     () => evaluateListingPrice(listing, allListings),
     [listing, allListings]
-  );
-
-  const aiSummary = useMemo(
-    () => generateSmartListingSummary(listing),
-    [listing]
   );
 
   const barterMatches = useMemo(
@@ -260,11 +257,11 @@ export default function AdDetailModal({
             {/* Title & Subtitle */}
             <div>
               <h1 className="text-[22px] sm:text-[24px] font-bold leading-[36px] text-[var(--content-neutral-stronger)]">
-                {listing.title}
+                {toPersianDigits(listing.title)}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[14px] text-[var(--content-neutral-default)]">
                 <span>
-                  {listing.publishedAt} در {listing.city}، {listing.neighborhood}
+                  {toPersianDigits(listing.publishedAt)} در {listing.city}، {listing.neighborhood}
                 </span>
                 <span className="text-[var(--border-neutral-weak)]">•</span>
                 <span className="text-[12px] px-2 py-0.5 rounded-[4px] bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-stronger)]">
@@ -372,7 +369,7 @@ export default function AdDetailModal({
                   className="kt-button--primary !h-[42px] !px-4 sm:!px-5 shadow-sm"
                 >
                   <Phone className="w-4 h-4" />
-                  <span>{showPhone ? listing.sellerPhone : 'اطلاعات تماس'}</span>
+                  <span>{showPhone ? toPersianDigits(listing.sellerPhone) : 'اطلاعات تماس'}</span>
                 </button>
 
                 <button
@@ -425,7 +422,7 @@ export default function AdDetailModal({
                   type="button"
                   onClick={handleShare}
                   className="w-10 h-10 rounded-full hover:bg-[var(--surface-neutral-weak)] flex items-center justify-center text-[var(--content-neutral-default)] relative"
-                  title="اشتراک‌گذاری"
+                  title="کپی لینک آگهی"
                 >
                   {copiedShare ? (
                     <Check className="w-5 h-5 text-[var(--semantic-positive)]" />
@@ -435,6 +432,16 @@ export default function AdDetailModal({
                 </button>
               </div>
             </div>
+
+            <ShareActionsBar
+              listingCode={listing.code}
+              listingTitle={listing.title}
+              cityName={listing.city}
+              neighborhood={listing.neighborhood}
+              streetHint={listing.coordinates?.streetHint}
+              lat={listing.coordinates?.lat}
+              lng={listing.coordinates?.lng}
+            />
 
             {/* Inline Barter Offer Form */}
             {showOfferForm && onSubmitBarterOffer && (
@@ -527,7 +534,7 @@ export default function AdDetailModal({
                     شماره تماس {listing.sellerName}:
                   </div>
                   <div className="text-[16px] font-bold text-[var(--content-neutral-stronger)] dir-ltr text-right mt-0.5">
-                    {listing.sellerPhone}
+                    {toPersianDigits(listing.sellerPhone)}
                   </div>
                 </div>
                 <button
@@ -595,30 +602,9 @@ export default function AdDetailModal({
               </div>
             )}
 
-            {/* Offline AI 3-Point Smart Summary & Safety Score */}
+            {/* Inline Divar-Style AI Advisory, Checklist & Transparency Section */}
             {aiConfig.enabled && aiConfig.smartSummary && (
-              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-[var(--brand-primary)]">
-                    <Sparkles className="w-4 h-4" />
-                    <span>خلاصه هوشمند ۳ نکته‌ای آگهی</span>
-                  </div>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--semantic-positive)]">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>
-                      شاخص سلامت: {toPersianDigits(aiSummary.safetyScore)}٪ ({aiSummary.safetyLabel})
-                    </span>
-                  </span>
-                </div>
-                <ul className="space-y-1.5 text-[12px] leading-[22px] text-[var(--content-neutral-stronger)] pr-1">
-                  {aiSummary.bullets.map((b, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <span className="text-[var(--brand-primary)] font-bold">•</span>
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <InlineAdAiSection listing={listing} allListings={allListings} />
             )}
 
             {/* 3-Column Boxed Quick Specs Table (.kt-group-row) */}
@@ -630,7 +616,7 @@ export default function AdDetailModal({
                       {spec.label}
                     </div>
                     <div className="text-[15px] font-bold text-[var(--content-neutral-stronger)]">
-                      {spec.value}
+                      {toPersianDigits(spec.value)}
                     </div>
                   </div>
                 ))}
@@ -848,7 +834,7 @@ export default function AdDetailModal({
                 <span className="text-[var(--content-neutral-default)]">قیمت / ارزش</span>
                 <span className="font-medium text-[var(--content-neutral-stronger)]">
                   {listing.priceLabel
-                    ? listing.priceLabel
+                    ? toPersianDigits(listing.priceLabel)
                     : listing.deposit
                     ? `ودیعه ${formatToman(listing.deposit)}`
                     : listing.price > 0
@@ -866,7 +852,9 @@ export default function AdDetailModal({
                       : 'text-[var(--content-neutral-default)]'
                   }`}
                 >
-                  {listing.hasExchange ? 'دارد (معاوضه پذیرفته می‌شود)' : 'ندارد'}
+                  {listing.hasExchange
+                    ? 'دارد (معاوضه پذیرفته می‌شود)'
+                    : 'ندارد (فروش نقدی / تسهیلات ۵۰/۵۰)'}
                 </span>
               </div>
 
@@ -876,7 +864,7 @@ export default function AdDetailModal({
                     کالای مورد نظر جهت تهاتر
                   </span>
                   <span className="font-medium text-[var(--content-neutral-stronger)] text-left">
-                    {listing.exchangeWith}
+                    {toPersianDigits(listing.exchangeWith)}
                   </span>
                 </div>
               )}
@@ -894,7 +882,7 @@ export default function AdDetailModal({
                 <div key={row.label} className="kt-base-row">
                   <span className="text-[var(--content-neutral-default)]">{row.label}</span>
                   <span className="font-medium text-[var(--content-neutral-stronger)]">
-                    {row.value}
+                    {toPersianDigits(row.value)}
                   </span>
                 </div>
               ))}
@@ -941,7 +929,7 @@ export default function AdDetailModal({
                 توضیحات
               </h2>
               <p className="text-[15px] leading-[28px] text-[var(--content-neutral-stronger)] whitespace-pre-line">
-                {listing.description}
+                {toPersianDigits(listing.description)}
               </p>
             </div>
 

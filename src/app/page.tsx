@@ -23,15 +23,18 @@ import {
   CheckCircle2,
   Zap,
   LogIn,
+  Bot,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Sidebar, { FilterState } from '@/components/Sidebar';
 import PostCard from '@/components/PostCard';
 import AdDetailModal from '@/components/AdDetailModal';
 import UserDashboardModal from '@/components/UserDashboardModal';
+import type { EditableListingFields } from '@/components/dashboard/MyAdsSection';
 import AuthOtpModal from '@/components/AuthOtpModal';
 import RolePanelModal from '@/components/RolePanelModal';
 import AiAssistantModal from '@/components/AiAssistantModal';
+import { openGlobalChatbot } from '@/components/FloatingAiChatbot';
 import MapFeedView from '@/components/MapFeedView';
 import MissingLocationModal, { UnpinnedListingPromptItem } from '@/components/MissingLocationModal';
 import { ApiClientError, BackendProfileResponse, tahatorApi } from '@/lib/apiClient';
@@ -49,6 +52,7 @@ import {
 import {
   CATEGORIES,
   Listing,
+  formatToman,
   toPersianDigits,
 } from '@/data/mockData';
 import {
@@ -57,6 +61,7 @@ import {
   analyzeChatSafety,
   extractAreaFromListing,
   extractRoomsFromListing,
+  normalizeDigits,
 } from '@/lib/offlineAi';
 import {
   AdModerationStatus,
@@ -134,7 +139,7 @@ export default function HomePage() {
   const [isLoadingListings, setIsLoadingListings] = useState<boolean>(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [backendCities, setBackendCities] = useState<
-    { id: string; slug: string; name: string; province: string; isPopular: boolean; adCount: number }[]
+    { id: string; slug: string; name: string; province: string; isPopular: boolean; adCount?: number }[]
   >([]);
   const [backendCategories, setBackendCategories] = useState<
     { id: string; slug: string; name: string; emoji: string; sortOrder: number; showInSidebar: boolean }[]
@@ -395,9 +400,18 @@ export default function HomePage() {
     if (savedRecentSearch) setRecentSearches(savedRecentSearch);
 
     try {
-      const qParam = new URLSearchParams(window.location.search).get('q');
+      const sp = new URLSearchParams(window.location.search);
+      const qParam = sp.get('q');
+      const cityParam = sp.get('city');
+      const catParam = sp.get('category');
       if (qParam && qParam.trim()) {
         setSearchQuery(qParam.trim());
+      }
+      if (cityParam && cityParam.trim()) {
+        setSelectedCities([cityParam.trim()]);
+      }
+      if (catParam && catParam.trim()) {
+        setFilters((prev) => ({ ...prev, category: catParam.trim() }));
       }
     } catch {}
 
@@ -966,25 +980,27 @@ export default function HomePage() {
       });
   };
 
-  const handleEditAd = (
-    id: string,
-    updates: {
-      title: string;
-      price: number;
-      hasExchange: boolean;
-      exchangeWith: string;
-      description: string;
-    }
-  ) => {
+  const handleEditAd = (id: string, updates: EditableListingFields) => {
     if (isLoggedIn) {
       void tahatorApi
         .updateMyListing(id, {
           title: updates.title,
+          categoryName: updates.category,
+          subcategory: updates.subcategory,
+          cityName: updates.city,
+          neighborhood: updates.neighborhood,
+          streetHint: updates.streetHint,
           price: updates.price,
           priceLabel: updates.price === 0 ? 'توافقی' : undefined,
           hasExchange: updates.hasExchange,
           exchangeWith: updates.hasExchange ? updates.exchangeWith : undefined,
+          hasInstallmentPlan: updates.hasInstallmentPlan,
+          images: updates.images,
           description: updates.description,
+        })
+        .then((saved) => {
+          const mapped = mapBackendListingToUi(saved);
+          setListings((prev) => prev.map((item) => (item.id === id ? mapped : item)));
         })
         .catch((err) => {
           if (err instanceof ApiClientError) triggerToast(err.message);
@@ -996,10 +1012,23 @@ export default function HomePage() {
           ? {
               ...item,
               title: updates.title,
+              category: updates.category || item.category,
+              subcategory: updates.subcategory || item.subcategory,
+              city: updates.city || item.city,
+              neighborhood: updates.neighborhood || item.neighborhood,
               price: updates.price,
               priceLabel: updates.price === 0 ? 'توافقی' : undefined,
               hasExchange: updates.hasExchange,
               exchangeWith: updates.hasExchange ? updates.exchangeWith : undefined,
+              hasInstallmentPlan:
+                updates.hasInstallmentPlan !== undefined
+                  ? updates.hasInstallmentPlan
+                  : item.hasInstallmentPlan,
+              images: updates.images && updates.images.length > 0 ? updates.images : item.images,
+              coordinates: {
+                ...item.coordinates,
+                streetHint: updates.streetHint ?? item.coordinates.streetHint,
+              },
               description: updates.description,
             }
           : item
@@ -1602,42 +1631,9 @@ export default function HomePage() {
               return;
             }
 
-            if (partial.nationalId && partial.nationalId.trim().length >= 10) {
-              void tahatorApi
-                .submitKyc({
-                  nationalId: partial.nationalId.trim(),
-                  iban: partial.iban?.trim() || undefined,
-                  fullName: partial.name?.trim() || undefined,
-                })
-                .then((res) => {
-                  const verified = res.user?.isVerified ?? res.isVerified ?? true;
-                  const ibanMasked = res.user?.ibanMasked ?? res.ibanMasked;
-                  setUserProfile((prev) => {
-                    const next = {
-                      ...prev,
-                      isVerified: verified,
-                      iban: ibanMasked || prev.iban,
-                    };
-                    persistSafe('tahator_profile_v2', next);
-                    return next;
-                  });
-                  triggerToast(res.message);
-                })
-                .catch((err) => {
-                  setUserProfile((prev) => {
-                    const reverted = { ...prev, isVerified: false };
-                    persistSafe('tahator_profile_v2', reverted);
-                    return reverted;
-                  });
-                  if (err instanceof ApiClientError) {
-                    triggerToast(err.message);
-                  }
-                });
-              return;
-            }
-
             const patchPayload: Record<string, unknown> = {};
             if (partial.name !== undefined) patchPayload.fullName = partial.name;
+            if (partial.city !== undefined) patchPayload.cityName = partial.city;
             if (partial.autoOfficialInvoice !== undefined)
               patchPayload.autoOfficialInvoice = partial.autoOfficialInvoice;
             if (partial.uiTheme !== undefined)
@@ -1655,6 +1651,39 @@ export default function HomePage() {
               void tahatorApi.updateMyProfile(patchPayload).catch((err) => {
                 if (err instanceof ApiClientError) triggerToast(err.message);
               });
+            }
+
+            const cleanNid = normalizeDigits(partial.nationalId || '').replace(/[^\d]/g, '');
+            const prevCleanNid = normalizeDigits(userProfile.nationalId || '').replace(/[^\d]/g, '');
+            if (
+              cleanNid.length === 10 &&
+              (!userProfile.isVerified || cleanNid !== prevCleanNid || Boolean(partial.iban && !partial.iban.includes('*')))
+            ) {
+              void tahatorApi
+                .submitKyc({
+                  nationalId: cleanNid,
+                  iban: partial.iban?.includes('*') ? undefined : partial.iban?.trim() || undefined,
+                  fullName: partial.name?.trim() || undefined,
+                })
+                .then((res) => {
+                  const verified = res.user?.isVerified ?? res.isVerified ?? true;
+                  const ibanMasked = res.user?.ibanMasked ?? res.ibanMasked;
+                  setUserProfile((prev) => {
+                    const next = {
+                      ...prev,
+                      isVerified: verified,
+                      iban: ibanMasked || prev.iban,
+                    };
+                    persistSafe('tahator_profile_v2', next);
+                    return next;
+                  });
+                  triggerToast(res.message);
+                })
+                .catch((err) => {
+                  if (err instanceof ApiClientError) {
+                    triggerToast(err.message);
+                  }
+                });
             }
           }}
           onSwitchRole={handleSwitchRole}
@@ -2321,6 +2350,38 @@ export default function HomePage() {
               </button>
             </div>
           </section>
+
+          {/* Inline Divar-Style Contextual Search Intent & Financing Summary */}
+          {searchQuery.trim().length >= 3 && filteredListings.length > 0 && (() => {
+            const priced = filteredListings.filter((x) => x.price > 0).map((x) => x.price).sort((a, b) => a - b);
+            const exchangeCount = filteredListings.filter((x) => x.hasExchange).length;
+            const minP = priced[0] || 0;
+            const maxP = priced[priced.length - 1] || 0;
+            return (
+              <div className="mb-4 p-3 rounded-[8px] border border-[var(--brand-action)]/25 bg-[var(--surface-neutral-subtle)] flex flex-wrap items-center justify-between gap-2.5 text-[12px]">
+                <div className="flex flex-wrap items-center gap-2 text-[var(--content-neutral-stronger)]">
+                  <Sparkles className="w-4 h-4 text-[var(--brand-action)] shrink-0" />
+                  <span>
+                    <strong>تحلیل هوشمند جستجوی «{toPersianDigits(searchQuery.trim())}»:</strong>{' '}
+                    {toPersianDigits(filteredListings.length)} مورد فعال ({toPersianDigits(exchangeCount)} مورد دارای امکان معاوضه)
+                    {priced.length > 0 ? ` · بازه قیمتی از ${formatToman(minP)} تا ${formatToman(maxP)}` : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openGlobalChatbot({
+                      prefill: `برای جستجوی «${searchQuery.trim()}» بهترین گزینه‌های معاوضه یا خرید اقساطی ۵۰/۵۰ سایت را پیشنهاد بده.`,
+                    })
+                  }
+                  className="kt-button--outlined !h-[30px] !px-3 text-[11.5px] !border-[var(--brand-action)]/40 text-[var(--brand-primary)] hover:!bg-[var(--brand-soft)] shrink-0"
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>مشورت با چت‌بات درباره این جستجو</span>
+                </button>
+              </div>
+            );
+          })()}
 
           {showMapView && (
             <MapFeedView

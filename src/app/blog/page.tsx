@@ -3,14 +3,16 @@ import PublicPageShell from '@/components/PublicPageShell';
 import BlogListClient from '@/components/blog/BlogListClient';
 import { fetchBackendPublic } from '@/lib/serverApi';
 import type { BlogCategory, BlogPostItem } from '@/types/platform';
+import { buildPageMetadata } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPageMetadata({
   title: 'مجله تخصصی و راهنمای تهاتر',
   description:
-    'مقالات آموزشی تهاتر سه‌طرفه، تسهیلات ۵۰/۵۰، ارزش‌گذاری هوشمند و نکات حقوقی معاملات امن ملک و خودرو در تهاتر آپ.',
-};
+    'مقالات آموزشی تهاتر، تسهیلات ۱ تا ۵ سال ۵۰/۵۰، ارزش‌گذاری هوشمند و نکات حقوقی معاملات امن ملک و خودرو در تهاتر آپ.',
+  path: '/blog',
+});
 
 export default async function BlogIndexPage() {
   const [categories, postsPayload] = await Promise.all([

@@ -13,9 +13,12 @@ import {
   RotateCcw,
   Trash2,
   TrendingUp,
+  Upload,
+  X,
   Zap,
 } from 'lucide-react';
-import { Listing, formatToman, toPersianDigits } from '@/data/mockData';
+import { CATEGORIES, CITIES, Listing, formatToman, toPersianDigits } from '@/data/mockData';
+import { ApiClientError, tahatorApi } from '@/lib/apiClient';
 import { AdModerationStatus, ListingAnalyticsMeta } from '@/types/platform';
 
 const STATUS_LABELS: Record<AdModerationStatus, { text: string; cls: string }> = {
@@ -37,6 +40,21 @@ const STATUS_LABELS: Record<AdModerationStatus, { text: string; cls: string }> =
   },
 };
 
+export interface EditableListingFields {
+  title: string;
+  price: number;
+  category?: string;
+  subcategory?: string;
+  city?: string;
+  neighborhood?: string;
+  streetHint?: string;
+  hasExchange: boolean;
+  exchangeWith: string;
+  hasInstallmentPlan?: boolean;
+  description: string;
+  images?: string[];
+}
+
 export interface ArchivedAdEntry {
   listing: Listing;
   reason: string;
@@ -52,10 +70,7 @@ interface MyAdsSectionProps {
   onLadderAd: (id: string) => void;
   onUrgentAd: (id: string) => void;
   onRenewAd: (id: string) => void;
-  onEditAd: (
-    id: string,
-    updates: { title: string; price: number; hasExchange: boolean; exchangeWith: string; description: string }
-  ) => void;
+  onEditAd: (id: string, updates: EditableListingFields) => void;
   onDeleteAd: (id: string, reason: string) => void;
   onRestoreArchivedAd?: (id: string) => void;
   onPinLocationAd?: (ad: Listing) => void;
@@ -82,9 +97,18 @@ export default function MyAdsSection({
   const [editingAd, setEditingAd] = useState<Listing | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editPrice, setEditPrice] = useState('');
-  const [editExchange, setEditExchange] = useState(true);
+  const [editCategory, setEditCategory] = useState(CATEGORIES[0].name);
+  const [editSubcategory, setEditSubcategory] = useState(CATEGORIES[0].subcategories[0]);
+  const [editCity, setEditCity] = useState(CITIES[0].name);
+  const [editNeighborhood, setEditNeighborhood] = useState('');
+  const [editStreetHint, setEditStreetHint] = useState('');
+  const [editExchange, setEditExchange] = useState(false);
   const [editExchangeWith, setEditExchangeWith] = useState('');
+  const [editInstallment, setEditInstallment] = useState(true);
   const [editDesc, setEditDesc] = useState('');
+  const [editImages, setEditImages] = useState<string[]>([]);
+  const [uploadingEditImg, setUploadingEditImg] = useState(false);
+  const [uploadEditErr, setUploadEditErr] = useState('');
 
   const [deletingAdId, setDeletingAdId] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState('در تهاتر آپ معامله/معاوضه شد');
@@ -93,9 +117,36 @@ export default function MyAdsSection({
     setEditingAd(ad);
     setEditTitle(ad.title);
     setEditPrice(ad.price > 0 ? String(ad.price) : '');
+    setEditCategory(ad.category || CATEGORIES[0].name);
+    setEditSubcategory(ad.subcategory || CATEGORIES[0].subcategories[0]);
+    setEditCity(ad.city || CITIES[0].name);
+    setEditNeighborhood(ad.neighborhood || '');
+    setEditStreetHint(ad.coordinates?.streetHint || '');
     setEditExchange(ad.hasExchange);
     setEditExchangeWith(ad.exchangeWith || '');
+    setEditInstallment(ad.hasInstallmentPlan !== false);
     setEditDesc(ad.description);
+    setEditImages(ad.images || []);
+    setUploadEditErr('');
+  };
+
+  const selectedEditCatObj = CATEGORIES.find((c) => c.name === editCategory) || CATEGORIES[0];
+  const selectedEditCityObj = CITIES.find((c) => c.name === editCity) || CITIES[0];
+
+  const handleEditImageUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadEditErr('');
+    setUploadingEditImg(true);
+    try {
+      const uploaded = await tahatorApi.uploadImages(Array.from(files));
+      setEditImages((prev) =>
+        Array.from(new Set([...prev, ...uploaded.items.map((u) => u.url)])).slice(0, 7)
+      );
+    } catch (err) {
+      setUploadEditErr(err instanceof ApiClientError ? err.message : 'خطا در آپلود تصویر');
+    } finally {
+      setUploadingEditImg(false);
+    }
   };
 
   const filteredMyAds = myAds.filter((ad) => {
@@ -224,6 +275,88 @@ export default function MyAdsSection({
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[12px] font-medium mb-1">دسته‌بندی</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => {
+                      const nextCat = e.target.value;
+                      setEditCategory(nextCat);
+                      const found = CATEGORIES.find((c) => c.name === nextCat);
+                      if (found?.subcategories[0]) setEditSubcategory(found.subcategories[0]);
+                    }}
+                    className="kt-input !h-[36px] text-[12.5px]"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium mb-1">زیردسته</label>
+                  <select
+                    value={editSubcategory}
+                    onChange={(e) => setEditSubcategory(e.target.value)}
+                    className="kt-input !h-[36px] text-[12.5px]"
+                  >
+                    {selectedEditCatObj.subcategories.map((sub) => (
+                      <option key={sub} value={sub}>
+                        {sub}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[12px] font-medium mb-1">شهر</label>
+                  <select
+                    value={editCity}
+                    onChange={(e) => {
+                      const nextCity = e.target.value;
+                      setEditCity(nextCity);
+                      const found = CITIES.find((c) => c.name === nextCity);
+                      if (found?.neighborhoods[0]) setEditNeighborhood(found.neighborhoods[0]);
+                    }}
+                    className="kt-input !h-[36px] text-[12.5px]"
+                  >
+                    {CITIES.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name} ({c.province})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium mb-1">محله</label>
+                  <input
+                    type="text"
+                    value={editNeighborhood}
+                    onChange={(e) => setEditNeighborhood(e.target.value)}
+                    list="edit-neighborhoods-list"
+                    placeholder="نام محله..."
+                    className="kt-input !h-[36px] text-[12.5px]"
+                  />
+                  <datalist id="edit-neighborhoods-list">
+                    {selectedEditCityObj.neighborhoods.map((nb) => (
+                      <option key={nb} value={nb} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium mb-1">محدوده / خیابان</label>
+                  <input
+                    type="text"
+                    value={editStreetHint}
+                    onChange={(e) => setEditStreetHint(e.target.value)}
+                    placeholder="خیابان یا محدوده..."
+                    className="kt-input !h-[36px] text-[12.5px]"
+                  />
+                </div>
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-1.5 text-[12px] cursor-pointer">
                   <input
@@ -233,6 +366,15 @@ export default function MyAdsSection({
                     className="accent-[var(--brand-action)]"
                   />
                   <span>امکان معاوضه فعال باشد</span>
+                </label>
+                <label className="flex items-center gap-1.5 text-[12px] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editInstallment}
+                    onChange={(e) => setEditInstallment(e.target.checked)}
+                    className="accent-[var(--brand-action)]"
+                  />
+                  <span>تسهیلات اقساطی ۵۰/۵۰ (۱ تا ۵ سال)</span>
                 </label>
                 {editExchange && (
                   <input
@@ -244,8 +386,50 @@ export default function MyAdsSection({
                   />
                 )}
               </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[12px] font-medium">
+                    تصاویر آگهی ({toPersianDigits(editImages.length)} از ۷)
+                  </label>
+                  <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] text-[11px] font-bold cursor-pointer hover:border-[var(--brand-action)]">
+                    <Upload className="w-3.5 h-3.5 text-[var(--brand-action)]" />
+                    <span>{uploadingEditImg ? 'در حال آپلود...' : 'افزودن عکس'}</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      disabled={uploadingEditImg}
+                      onChange={(e) => void handleEditImageUpload(e.target.files)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                {uploadEditErr && (
+                  <div className="text-[11px] text-[var(--semantic-negative)]">{uploadEditErr}</div>
+                )}
+                {editImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {editImages.map((imgUrl, idx) => (
+                      <div
+                        key={`${imgUrl}-${idx}`}
+                        className="relative w-14 h-14 rounded-[4px] overflow-hidden border border-[var(--border-neutral-weaker)]"
+                      >
+                        <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setEditImages((prev) => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 text-white flex items-center justify-center"
+                          title="حذف تصویر"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <textarea
-                rows={2}
+                rows={3}
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
                 className="kt-input !h-auto py-2 text-[13px] w-full"
@@ -264,9 +448,16 @@ export default function MyAdsSection({
                     onEditAd(editingAd.id, {
                       title: editTitle.trim() || editingAd.title,
                       price: Number(editPrice) || 0,
+                      category: editCategory,
+                      subcategory: editSubcategory,
+                      city: editCity,
+                      neighborhood: editNeighborhood.trim() || 'مرکز شهر',
+                      streetHint: editStreetHint.trim() || undefined,
                       hasExchange: editExchange,
                       exchangeWith: editExchangeWith.trim(),
+                      hasInstallmentPlan: editInstallment,
                       description: editDesc.trim() || editingAd.description,
+                      images: editImages,
                     });
                     setEditingAd(null);
                   }}

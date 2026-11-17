@@ -8,6 +8,7 @@ import BlogCommentSection from '@/components/blog/BlogCommentSection';
 import { fetchBackendPublic } from '@/lib/serverApi';
 import type { BlogPostItem } from '@/types/platform';
 import { toPersianDigits } from '@/data/mockData';
+import { buildPageMetadata } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,17 +27,14 @@ export async function generateMetadata({
     return { title: 'مقاله یافت نشد' };
   }
 
-  return {
+  return buildPageMetadata({
     title: post.metaTitle || post.title,
     description: post.metaDescription || post.excerpt,
-    openGraph: {
-      title: post.metaTitle || post.title,
-      description: post.metaDescription || post.excerpt,
-      type: 'article',
-      publishedTime: post.publishedAt || undefined,
-      images: post.coverImage ? [{ url: post.coverImage }] : undefined,
-    },
-  };
+    path: `/blog/${encodeURIComponent(post.slug)}`,
+    image: post.coverImage || undefined,
+    type: 'article',
+    keywords: Array.isArray(post.tags) ? post.tags : [],
+  });
 }
 
 function renderInlineRichText(text: string) {
