@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import {
   MapPin,
   ChevronDown,
@@ -28,6 +29,9 @@ import {
   LayoutDashboard,
   ChevronLeft,
   User,
+  BookOpen,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -103,8 +107,24 @@ export default function Navbar({
 }: NavbarProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [isDark, setIsDark] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const current = document.documentElement.getAttribute('data-theme');
+    setIsDark(current === 'dark');
+  }, []);
+
+  const toggleDarkTheme = () => {
+    const nextDark = !isDark;
+    const nextTheme = nextDark ? 'dark' : 'light';
+    setIsDark(nextDark);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    try {
+      localStorage.setItem('tahator_theme', nextTheme);
+    } catch {}
+  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -243,9 +263,9 @@ export default function Navbar({
           </button>
 
           {/* Dynamic Search Input with Scoped Autocomplete */}
-          <div className="relative flex-1 min-w-0 max-w-[360px]" ref={searchRef}>
-            <div className="relative flex items-center">
-              <Search className="w-[16px] h-[16px] text-[var(--content-neutral-default)] absolute right-3 pointer-events-none" />
+          <div className="relative flex-1 min-w-0 max-w-[300px] xl:max-w-[360px]" ref={searchRef}>
+            <div className="relative flex items-center min-w-0 rounded-[4px] overflow-hidden">
+              <Search className="w-[16px] h-[16px] text-[var(--content-neutral-default)] absolute right-3 pointer-events-none shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
@@ -261,7 +281,7 @@ export default function Navbar({
                   setSearchFocused(true);
                 }}
                 placeholder={searchPlaceholder}
-                className="w-full h-[38px] sm:h-[40px] pr-9 pl-8 bg-[var(--surface-neutral-weak)] border border-transparent focus:border-[var(--border-neutral-weak)] focus:bg-[var(--surface-neutral-weaker)] rounded-[4px] text-[12px] sm:text-[13px] text-[var(--content-neutral-stronger)] placeholder:text-[var(--content-neutral-default)] focus:outline-none transition-all"
+                className="w-full min-w-0 h-[38px] sm:h-[40px] pr-9 pl-8 bg-[var(--surface-neutral-weak)] border border-transparent focus:border-[var(--border-neutral-weak)] focus:bg-[var(--surface-neutral-weaker)] rounded-[4px] text-[12px] sm:text-[13px] text-[var(--content-neutral-stronger)] placeholder:text-[var(--content-neutral-default)] focus:outline-none transition-all"
               />
               {searchQuery && (
                 <button
@@ -412,6 +432,31 @@ export default function Navbar({
 
         {/* Left side (End in RTL): Dashboard, AI Assistant, Role Center & Primary CTAs */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {/* مجله و وبلاگ */}
+          <Link
+            href="/blog"
+            className="hidden md:inline-flex kt-button--ghost !h-[36px] !px-2 text-[12px] shrink-0 whitespace-nowrap"
+            title="مجله تخصصی و راهنمای تهاتر"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-[var(--brand-primary)] shrink-0" />
+            <span>وبلاگ</span>
+          </Link>
+
+          {/* تغییر حالت شب و روز */}
+          <button
+            type="button"
+            onClick={toggleDarkTheme}
+            className="inline-flex kt-button--ghost !h-[36px] !w-[36px] !px-0 justify-center shrink-0"
+            title={isDark ? 'فعال‌سازی حالت روز' : 'فعال‌سازی حالت شب'}
+            aria-label="تغییر تم تاریک و روشن"
+          >
+            {isDark ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-[var(--content-neutral-default)]" />
+            )}
+          </button>
+
           {/* هوش مصنوعی آفلاین ✨ */}
           <button
             type="button"

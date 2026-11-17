@@ -5,6 +5,7 @@ import {
   AlertCircle,
   Edit3,
   Eye,
+  MapPin,
   MessageSquare,
   PhoneCall,
   Plus,
@@ -57,6 +58,7 @@ interface MyAdsSectionProps {
   ) => void;
   onDeleteAd: (id: string, reason: string) => void;
   onRestoreArchivedAd?: (id: string) => void;
+  onPinLocationAd?: (ad: Listing) => void;
   onClose: () => void;
 }
 
@@ -72,6 +74,7 @@ export default function MyAdsSection({
   onEditAd,
   onDeleteAd,
   onRestoreArchivedAd,
+  onPinLocationAd,
   onClose,
 }: MyAdsSectionProps) {
   const [bucketTab, setBucketTab] = useState<'current' | 'drafts' | 'archived'>('current');
@@ -245,7 +248,7 @@ export default function MyAdsSection({
                 rows={2}
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
-                className="w-full p-2.5 rounded-[4px] border border-[var(--border-neutral-weaker)] text-[13px] bg-white"
+                className="kt-input !h-auto py-2 text-[13px] w-full"
               />
               <div className="flex justify-end gap-2">
                 <button
@@ -293,7 +296,7 @@ export default function MyAdsSection({
                     className={`px-3 py-1 rounded-[4px] text-[12px] border ${
                       deleteReason === reason
                         ? 'bg-[var(--brand-action)] text-white border-[var(--brand-action)]'
-                        : 'bg-white border-[var(--border-neutral-weaker)]'
+                        : 'bg-[var(--surface-neutral-default)] text-[var(--content-neutral-stronger)] border-[var(--border-neutral-weaker)]'
                     }`}
                   >
                     {reason}
@@ -351,7 +354,7 @@ export default function MyAdsSection({
                 const stBadge = STATUS_LABELS[meta.moderationStatus];
 
                 return (
-                  <div key={ad.id} className="py-4 bg-white space-y-3">
+                  <div key={ad.id} className="py-4 bg-[var(--surface-neutral-default)] space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div
                         onClick={() => {
@@ -379,6 +382,17 @@ export default function MyAdsSection({
                               <span className="px-2 py-0.5 rounded-[4px] bg-[var(--semantic-info)]/10 text-[var(--semantic-info)] text-[10px] font-bold">
                                 نردبان شده
                               </span>
+                            )}
+                            {ad.coordinates?.hasCoords === false ? (
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[10px] font-bold">
+                                موقعیت نقشه ثبت نشده
+                              </span>
+                            ) : (
+                              ad.coordinates?.isApproximate && (
+                                <span className="px-2 py-0.5 rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[10px] font-bold">
+                                  محدوده تقریبی ۴۵۰م
+                                </span>
+                              )
                             )}
                           </div>
                           <div className="text-[14px] font-bold text-[var(--content-neutral-stronger)] truncate mt-1">
@@ -423,6 +437,25 @@ export default function MyAdsSection({
                           <Edit3 className="w-3.5 h-3.5" />
                           <span>ویرایش</span>
                         </button>
+                        {onPinLocationAd && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onPinLocationAd(ad);
+                            }}
+                            className={`kt-button--outlined !h-[32px] !px-2.5 text-[11px] ${
+                              ad.coordinates?.hasCoords === false
+                                ? '!border-[var(--semantic-warning)] !text-[var(--semantic-warning)]'
+                                : ''
+                            }`}
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>
+                              {ad.coordinates?.hasCoords === false ? 'تعیین موقعیت نقشه' : 'ویرایش موقعیت نقشه'}
+                            </span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setDeletingAdId(ad.id)}

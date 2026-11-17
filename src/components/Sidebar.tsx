@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   ChevronRight,
   ChevronDown,
@@ -592,6 +593,25 @@ export default function Sidebar({
           </span>
           <span className="font-bold dir-ltr">{toPersianDigits('02191016487')}</span>
         </button>
+
+        {/* Navigation Links to Blog & Informational Pages */}
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[11px] font-medium text-[var(--content-neutral-default)] pt-1">
+          <Link href="/blog" className="hover:text-[var(--brand-primary)] transition-colors">
+            مجله و وبلاگ
+          </Link>
+          <span className="text-[var(--border-neutral-weak)]">•</span>
+          <Link href="/about" className="hover:text-[var(--brand-primary)] transition-colors">
+            درباره تهاتر آپ
+          </Link>
+          <span className="text-[var(--border-neutral-weak)]">•</span>
+          <Link href="/faq" className="hover:text-[var(--brand-primary)] transition-colors">
+            سوالات متداول
+          </Link>
+          <span className="text-[var(--border-neutral-weak)]">•</span>
+          <Link href="/terms" className="hover:text-[var(--brand-primary)] transition-colors">
+            قوانین و حریم خصوصی
+          </Link>
+        </div>
 
         {/* 3 Framed Trust Seals */}
         <div className="grid grid-cols-3 gap-2 pt-1">

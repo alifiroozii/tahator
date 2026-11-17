@@ -52,12 +52,26 @@ export default function PostCard({
     }
     if (listing.price > 0) {
       return (
-        <div className="truncate font-medium text-[var(--content-neutral-default)]">
+        <div className="truncate font-semibold text-[var(--content-neutral-stronger)]">
           {formatToman(listing.price)}
         </div>
       );
     }
     return <div className="truncate">توافقی</div>;
+  };
+
+  const estMonthly60 =
+    listing.price > 0 ? Math.round((listing.price * 0.5 * (1 + 0.22 * 5)) / 60) : 0;
+
+  const formatCompactMonthly = (val: number) => {
+    if (val >= 1_000_000_000) {
+      const b = (val / 1_000_000_000).toFixed(1).replace(/\.0$/, '');
+      return `${toPersianDigits(b)} میلیارد`;
+    }
+    if (val >= 1_000_000) {
+      return `${toPersianDigits(Math.round(val / 1_000_000))} م‌ت`;
+    }
+    return formatToman(val);
   };
 
   if (layoutMode === 'vertical') {
@@ -144,10 +158,21 @@ export default function PostCard({
               </div>
               {listing.hasInstallmentPlan && (
                 <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)]">
-                  ۵۰/۵۰ قسطی
+                  ۵۰/۵۰ تا ۵ سال
                 </span>
               )}
             </div>
+            {listing.price > 0 && estMonthly60 > 0 ? (
+              <div className="text-[10.5px] font-bold px-2 py-1 rounded-[4px] bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] truncate">
+                قسط ۱ تا ۵ سال: از {formatCompactMonthly(estMonthly60)} / ماه
+              </div>
+            ) : (
+              listing.hasInstallmentPlan && (
+                <div className="text-[10.5px] font-bold px-2 py-1 rounded-[4px] bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] truncate">
+                  امکان خرید اقساطی ۱ تا ۵ سال (حتی با تهاتر)
+                </div>
+              )
+            )}
             <div className="flex items-center justify-between text-[12px] text-[var(--content-neutral-default)] pt-1 border-t border-[var(--border-neutral-weaker)]">
               <span className="truncate">
                 {listing.city} · {listing.neighborhood}
@@ -168,7 +193,7 @@ export default function PostCard({
       {/* Right Info Column (Start in RTL) */}
       <div className="flex flex-col flex-1 min-w-0 justify-between">
         <div>
-          <h2 className="text-[14px] sm:text-[16px] font-medium leading-[23px] sm:leading-[26px] text-[var(--content-neutral-stronger)] line-clamp-2 group-hover:text-[var(--brand-action)] transition-colors">
+          <h2 className="text-[14px] sm:text-[16px] font-semibold leading-[23px] sm:leading-[26px] text-[var(--content-neutral-stronger)] line-clamp-2 group-hover:text-[var(--brand-action)] transition-colors">
             {listing.title}
           </h2>
           {specLine && (
@@ -178,7 +203,7 @@ export default function PostCard({
           )}
         </div>
 
-        <div className="mt-auto space-y-1 pt-1.5">
+        <div className="mt-auto space-y-1.5 pt-1.5">
           {/* Barter Tag Line */}
           {listing.hasExchange && (
             <div className="flex items-center gap-1 text-[11px] sm:text-[12px] text-[var(--brand-primary)] truncate">
@@ -190,7 +215,7 @@ export default function PostCard({
           )}
 
           {/* Price / Status Description */}
-          <div className="flex items-center gap-1.5 flex-wrap text-[13px] sm:text-[14px] leading-[22px] text-[var(--content-neutral-default)]">
+          <div className="flex items-center gap-1.5 flex-wrap text-[13px] sm:text-[14px] leading-[22px] font-bold text-[var(--content-neutral-stronger)]">
             <div className="truncate">{primaryPriceDisplay()}</div>
             {listing.hasInstallmentPlan && (
               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] shrink-0">
@@ -199,6 +224,20 @@ export default function PostCard({
               </span>
             )}
           </div>
+
+          {/* Highlighted Financing / Installments Strip */}
+          {listing.price > 0 && estMonthly60 > 0 ? (
+            <div className="flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-[4px] bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[10.5px] font-bold truncate">
+              <span className="truncate">قسط ۵ ساله: از {formatCompactMonthly(estMonthly60)}/ماه</span>
+              <span className="hidden xl:inline shrink-0 text-[9.5px] opacity-90">حتی بدون نقد</span>
+            </div>
+          ) : (
+            listing.hasInstallmentPlan && (
+              <div className="px-2 py-0.5 rounded-[4px] bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] text-[10.5px] font-bold truncate">
+                تسهیلات ۵۰/۵۰ (۱ تا ۵ سال · حتی بدون پیش‌پرداخت نقدی)
+              </div>
+            )
+          )}
 
           {/* Bottom Metadata Line */}
           <div className="flex items-center justify-between gap-2 pt-0.5 text-[11px] sm:text-[12px] leading-[20px]">

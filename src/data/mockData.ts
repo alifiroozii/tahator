@@ -76,6 +76,8 @@ export interface Listing {
     lat: number;
     lng: number;
     streetHint: string;
+    isApproximate?: boolean;
+    hasCoords?: boolean;
   };
   isUserCreated?: boolean;
 }

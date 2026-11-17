@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   X,
   ChevronRight,
@@ -41,6 +43,15 @@ import {
   normalizeDigits,
 } from '@/lib/offlineAi';
 
+const InteractiveMap = dynamic(() => import('@/components/InteractiveMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[210px] w-full flex items-center justify-center bg-[var(--surface-neutral-weak)] text-[12px] text-[var(--content-neutral-default)]">
+      در حال بارگذاری نقشه...
+    </div>
+  ),
+});
+
 interface AdDetailModalProps {
   listing: Listing;
   allListings: Listing[];
@@ -63,6 +74,12 @@ interface AdDetailModalProps {
   }) => void;
   onReportListing?: (listing: Listing, reason: string, details: string) => void;
   onTrackPhoneClick?: (listingId: string) => void;
+  onApplyInstallment?: (payload: {
+    listing: Listing;
+    totalAmount: number;
+    barterCoveredAmount: number;
+    months: number;
+  }) => void;
   aiConfig?: AiConfig;
 }
 
@@ -82,6 +99,7 @@ export default function AdDetailModal({
   onSubmitBarterOffer,
   onReportListing,
   onTrackPhoneClick,
+  onApplyInstallment,
   aiConfig = DEFAULT_AI_CONFIG,
 }: AdDetailModalProps) {
   const [activeImgIdx, setActiveImgIdx] = useState(0);
@@ -89,8 +107,11 @@ export default function AdDetailModal({
   const [showSafetyTips, setShowSafetyTips] = useState(false);
   const [showAgreementModal, setShowAgreementModal] = useState(false);
   const [copiedAgreement, setCopiedAgreement] = useState(false);
+  const [installmentMonths, setInstallmentMonths] = useState<number>(36);
+  const [zeroCashBarterMode, setZeroCashBarterMode] = useState<boolean>(false);
+  const [installmentRequested, setInstallmentRequested] = useState<boolean>(false);
   const [dealMyAssetPrice, setDealMyAssetPrice] = useState(() =>
-    listing.price > 0 ? String(Math.round(listing.price * 0.65)) : '1500000000'
+    listing.price > 0 ? String(Math.round(listing.price * 0.5)) : '1500000000'
   );
   const [showPhone, setShowPhone] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
@@ -150,9 +171,24 @@ export default function AdDetailModal({
     const diff = target - myAsset;
     const absDiff = Math.abs(diff);
     const halfCash = Math.round(absDiff * 0.5);
-    const monthly12 = Math.round((halfCash * 1.12) / 12);
-    return { target, myAsset, diff, absDiff, halfCash, monthly12 };
-  }, [listing.price, dealMyAssetPrice]);
+    const monthly12 = Math.round((halfCash * (1 + 0.22 * (installmentMonths / 12))) / installmentMonths);
+    const downPayment50 = Math.round(target * 0.5);
+    const loan50 = Math.max(0, target - downPayment50);
+    const totalPayable50 = Math.round(loan50 * (1 + 0.22 * (installmentMonths / 12)));
+    const monthly50 = installmentMonths > 0 ? Math.round(totalPayable50 / installmentMonths) : 0;
+    return {
+      target,
+      myAsset,
+      diff,
+      absDiff,
+      halfCash,
+      monthly12,
+      downPayment50,
+      loan50,
+      totalPayable50,
+      monthly50,
+    };
+  }, [listing.price, dealMyAssetPrice, installmentMonths]);
 
   const agreementDraftText = useMemo(
     () =>
@@ -234,6 +270,13 @@ export default function AdDetailModal({
                 <span className="text-[12px] px-2 py-0.5 rounded-[4px] bg-[var(--surface-neutral-weak)] text-[var(--content-neutral-stronger)]">
                   کد: {toPersianDigits(listing.code)}
                 </span>
+                <Link
+                  href={`/ads/${encodeURIComponent(listing.code)}`}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-[4px] bg-[var(--brand-soft)] text-[var(--brand-primary)] hover:underline"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>صفحه اختصاصی آگهی</span>
+                </Link>
               </div>
 
               {/* Tahator Feature Badges */}
@@ -554,7 +597,7 @@ export default function AdDetailModal({
 
             {/* Offline AI 3-Point Smart Summary & Safety Score */}
             {aiConfig.enabled && aiConfig.smartSummary && (
-              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2.5">
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-[13px] font-bold text-[var(--brand-primary)]">
                     <Sparkles className="w-4 h-4" />
@@ -595,7 +638,7 @@ export default function AdDetailModal({
             )}
 
             {/* Seller Self-Assessment & Authenticity Checklist */}
-            <div className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-white space-y-2">
+            <div className="p-3.5 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] space-y-2">
               <div className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
                 ارزیابی و وضعیت اعلامی فروشنده
               </div>
@@ -623,13 +666,13 @@ export default function AdDetailModal({
               </div>
             </div>
 
-            {/* Interactive Barter Sales Deal Structurer */}
-            {listing.hasExchange && listing.price > 0 && (
-              <div className="p-4 rounded-[8px] border border-[var(--brand-action)]/30 bg-[var(--brand-soft)]/35 space-y-3">
+            {/* Featured 50/50 Installments & Barter Simulator (All Priced Listings) */}
+            {listing.price > 0 && (
+              <div className="p-4 rounded-[8px] border border-[var(--brand-action)]/35 bg-[var(--brand-soft)]/35 space-y-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-[13px] font-bold text-[var(--brand-primary)]">
-                    <ArrowLeftRight className="w-4 h-4" />
-                    <span>شبیه‌ساز توافق سریع تهاتر و اقساط ۵۰/۵۰</span>
+                  <div className="flex items-center gap-1.5 text-[13.5px] font-bold text-[var(--brand-primary)]">
+                    <Percent className="w-4 h-4" />
+                    <span>تسهیلات خرید اقساطی ۵۰/۵۰ (۱ تا ۵ سال · حتی بدون پیش‌پرداخت نقدی)</span>
                   </div>
                   <button
                     type="button"
@@ -641,74 +684,159 @@ export default function AdDetailModal({
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                  <div className="sm:col-span-6">
-                    <label className="block text-[11px] text-[var(--content-neutral-default)] mb-1">
-                      ارزش تقریبی کالای پیشنهادی شما (تومان):
-                    </label>
-                    <input
-                      type="text"
-                      value={dealMyAssetPrice}
-                      onChange={(e) => setDealMyAssetPrice(e.target.value)}
-                      className="kt-input !h-[36px] text-[12px] text-left dir-ltr bg-white"
-                    />
-                  </div>
-                  <div className="sm:col-span-6 flex flex-wrap gap-1 sm:pt-4">
+                {/* Duration & Payment Method Toggle */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {[
-                      { label: '۵۰٪ ارزش', ratio: 0.5 },
-                      { label: '۷۵٪ ارزش', ratio: 0.75 },
-                      { label: 'سربه‌سر', ratio: 1 },
-                    ].map((preset) => (
+                      { m: 12, label: '۱۲ ماه (۱ سال)' },
+                      { m: 24, label: '۲۴ ماه (۲ سال)' },
+                      { m: 36, label: '۳۶ ماه (۳ سال)' },
+                      { m: 48, label: '۴۸ ماه (۴ سال)' },
+                      { m: 60, label: '۶۰ ماه (۵ سال)' },
+                    ].map((t) => (
                       <button
-                        key={preset.label}
+                        key={t.m}
                         type="button"
-                        onClick={() =>
-                          setDealMyAssetPrice(String(Math.round(listing.price * preset.ratio)))
-                        }
-                        className="px-2.5 py-1.5 rounded-[4px] border border-[var(--border-neutral-weaker)] bg-white hover:border-[var(--brand-action)] text-[11px] font-medium"
+                        onClick={() => setInstallmentMonths(t.m)}
+                        className={`px-2.5 py-1 rounded-[5px] text-[11px] font-bold border transition-colors ${
+                          installmentMonths === t.m
+                            ? 'bg-[var(--brand-action)] text-white border-[var(--brand-action)]'
+                            : 'bg-[var(--surface-neutral-default)] text-[var(--content-neutral-stronger)] border-[var(--border-neutral-weaker)]'
+                        }`}
                       >
-                        {preset.label}
+                        {t.label}
                       </button>
                     ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setZeroCashBarterMode(false)}
+                      className={`py-1.5 px-2.5 rounded-[5px] border text-[11.5px] font-bold text-center transition-colors ${
+                        !zeroCashBarterMode
+                          ? 'bg-[var(--surface-neutral-default)] border-[var(--brand-action)] text-[var(--brand-primary)]'
+                          : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                      }`}
+                    >
+                      ۵۰٪ پیش‌پرداخت نقد + ۵۰٪ اقساط
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setZeroCashBarterMode(true)}
+                      className={`py-1.5 px-2.5 rounded-[5px] border text-[11.5px] font-bold text-center transition-colors ${
+                        zeroCashBarterMode
+                          ? 'bg-[var(--semantic-positive-soft)] border-[var(--semantic-positive)] text-[var(--semantic-positive)]'
+                          : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)]'
+                      }`}
+                    >
+                      بدون پیش‌پرداخت نقدی (با تهاتر دارایی)
+                    </button>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
-                  <div className="p-2.5 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
-                    <div className="text-[10px] text-[var(--content-neutral-default)]">مابه‌التفاوت کل</div>
+                  <div className="p-2.5 rounded-[6px] bg-[var(--surface-neutral-default)] border border-[var(--border-neutral-weaker)]">
+                    <div className="text-[10.5px] text-[var(--content-neutral-default)]">
+                      {zeroCashBarterMode ? '۵۰٪ آورده غیرنقدی (تهاتر)' : '۵۰٪ پیش‌پرداخت نقدی'}
+                    </div>
                     <div className="font-bold text-[var(--content-neutral-stronger)] mt-0.5">
-                      {dealCalc.absDiff === 0 ? 'سربه‌سر' : formatToman(dealCalc.absDiff)}
+                      {formatToman(dealCalc.downPayment50)}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
-                    <div className="text-[10px] text-[var(--content-neutral-default)]">۵۰٪ پیش‌پرداخت نقد</div>
+                  <div className="p-2.5 rounded-[6px] bg-[var(--surface-neutral-default)] border border-[var(--border-neutral-weaker)]">
+                    <div className="text-[10.5px] text-[var(--content-neutral-default)]">۵۰٪ مبلغ تسهیلات</div>
                     <div className="font-bold text-[var(--brand-primary)] mt-0.5">
-                      {dealCalc.absDiff === 0 ? '۰ تومان' : formatToman(dealCalc.halfCash)}
+                      {formatToman(dealCalc.loan50)}
                     </div>
                   </div>
-                  <div className="p-2.5 rounded-[6px] bg-white border border-[var(--border-neutral-weaker)]">
-                    <div className="text-[10px] text-[var(--content-neutral-default)]">۱۲ قسط ماهیانه (طرح ۵۰/۵۰)</div>
-                    <div className="font-bold text-[var(--semantic-positive)] mt-0.5">
-                      {dealCalc.absDiff === 0 ? 'بدون قسط' : `${formatToman(dealCalc.monthly12)} / ماه`}
+                  <div className="p-2.5 rounded-[6px] bg-[var(--surface-neutral-default)] border border-[var(--border-neutral-weaker)]">
+                    <div className="text-[10.5px] text-[var(--content-neutral-default)]">
+                      قسط ماهانه ({toPersianDigits(installmentMonths)} ماه)
+                    </div>
+                    <div className="font-extrabold text-[var(--semantic-positive)] mt-0.5">
+                      {formatToman(dealCalc.monthly50)} / ماه
                     </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap justify-end gap-2">
+                {listing.hasExchange && (
+                  <div className="pt-2 border-t border-[var(--border-neutral-weaker)] space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <div className="sm:col-span-6">
+                        <label className="block text-[11px] text-[var(--content-neutral-default)] mb-1">
+                          ارزش دارایی تهاتری شما (تومان):
+                        </label>
+                        <input
+                          type="text"
+                          value={dealMyAssetPrice}
+                          onChange={(e) => setDealMyAssetPrice(e.target.value)}
+                          className="kt-input !h-[36px] text-[12px] text-left dir-ltr"
+                        />
+                      </div>
+                      <div className="sm:col-span-6 flex flex-wrap gap-1 sm:pt-4">
+                        {[
+                          { label: '۵۰٪ ارزش', ratio: 0.5 },
+                          { label: '۷۵٪ ارزش', ratio: 0.75 },
+                          { label: 'سربه‌سر', ratio: 1 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() =>
+                              setDealMyAssetPrice(String(Math.round(listing.price * preset.ratio)))
+                            }
+                            className="px-2.5 py-1.5 rounded-[4px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-default)] text-[var(--content-neutral-stronger)] hover:border-[var(--brand-action)] text-[11px] font-medium"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-[11.5px] text-[var(--content-neutral-default)]">
+                      مابه‌التفاوت پس از کسر دارایی شما:{' '}
+                      <strong className="text-[var(--content-neutral-stronger)]">
+                        {dealCalc.absDiff === 0 ? 'سربه‌سر (۰ تومان)' : formatToman(dealCalc.absDiff)}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap justify-between items-center gap-2 pt-1">
+                  {onApplyInstallment && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onApplyInstallment({
+                          listing,
+                          totalAmount: listing.price,
+                          barterCoveredAmount: dealCalc.downPayment50,
+                          months: installmentMonths,
+                        });
+                        setInstallmentRequested(true);
+                      }}
+                      className="kt-button--primary !h-[36px] !px-4 text-[12px]"
+                    >
+                      <Percent className="w-3.5 h-3.5" />
+                      <span>
+                        {installmentRequested
+                          ? 'درخواست تسهیلات ۵۰/۵۰ ثبت شد ✓'
+                          : `ثبت درخواست تسهیلات ${toPersianDigits(installmentMonths)} ماهه روی این آگهی`}
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      const summaryMsg = `سلام، برای آگهی «${listing.title}» قصد معاوضه با دارایی به ارزش ${formatToman(dealCalc.myAsset)} را دارم. ${
-                        dealCalc.absDiff === 0
-                          ? 'ارزش پیشنهادی سربه‌سر است.'
-                          : `مابه‌التفاوت ${formatToman(dealCalc.absDiff)} بوده و حاضرم نصف را نقد (${formatToman(dealCalc.halfCash)}) و مابقی را با اقساط ۵۰/۵۰ (${formatToman(dealCalc.monthly12)} ماهانه) تسویه کنم.`
-                      }`;
+                      const summaryMsg = `سلام، برای آگهی «${listing.title}» با ارزش ${formatToman(listing.price)} مایل به استفاده از طرح ۵۰/۵۰ (${
+                        zeroCashBarterMode ? 'بدون پیش‌پرداخت نقدی و با تهاتر دارایی' : '۵۰٪ پیش‌پرداخت نقد'
+                      }) با بازپرداخت ${toPersianDigits(installmentMonths)} ماهه (حدود ${formatToman(dealCalc.monthly50)}/ماه) هستم.`;
                       onOpenChatWith(listing, false, summaryMsg);
                     }}
-                    className="kt-button--primary !h-[34px] !px-4 text-[12px]"
+                    className="kt-button--outlined !h-[36px] !px-4 text-[12px]"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    <span>ارسال همین ساختار پیشنهادی در چت</span>
+                    <span>ارسال ساختار ۵۰/۵۰ در چت</span>
                   </button>
                 </div>
               </div>
@@ -968,51 +1096,28 @@ export default function AdDetailModal({
               </p>
             </div>
 
-            {/* Simulated Location Map with Red Translucent Radius */}
+            {/* Real Interactive Leaflet Map */}
             <div className="rounded-[6px] border border-[var(--border-neutral-weaker)] overflow-hidden">
-              <div className="relative h-[196px] bg-[#eef2f6] overflow-hidden select-none">
-                {/* Simulated Street Grid SVG */}
-                <svg
-                  className="w-full h-full opacity-75"
-                  viewBox="0 0 400 200"
-                  preserveAspectRatio="none"
-                >
-                  <rect width="400" height="200" fill="#eef1f5" />
-                  <path
-                    d="M0 40 L400 55 M0 110 L400 95 M0 165 L400 175 M70 0 L55 200 M160 0 L180 200 M270 0 L255 200 M350 0 L365 200"
-                    stroke="#ffffff"
-                    strokeWidth="7"
-                  />
-                  <path
-                    d="M0 78 Q190 60 400 130"
-                    stroke="#fde68a"
-                    strokeWidth="8"
-                    fill="none"
-                  />
-                  <rect x="90" y="55" width="45" height="30" rx="3" fill="#dcfce7" />
-                  <rect x="285" y="115" width="55" height="35" rx="3" fill="#dcfce7" />
-                </svg>
-
-                {/* Translucent Red Circle Radius */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div
-                    className="w-28 h-28 rounded-full border-2 flex items-center justify-center"
-                    style={{
-                      backgroundColor: 'rgba(195, 46, 46, 0.2)',
-                      borderColor: 'var(--brand-action)',
-                    }}
-                  >
-                    <div className="w-3.5 h-3.5 rounded-full bg-[var(--brand-action)] ring-4 ring-white shadow" />
-                  </div>
-                </div>
-
-                {/* Map Location Label */}
-                <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-[4px] bg-white/95 shadow-sm text-[12px] text-[var(--content-neutral-stronger)] flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-[var(--brand-action)]" />
-                  <span>
-                    {listing.city}، {listing.coordinates.streetHint}
+              <InteractiveMap
+                mode="detail"
+                selectedCity={listing.city}
+                centerLat={listing.coordinates?.lat}
+                centerLng={listing.coordinates?.lng}
+                isApproximate={listing.coordinates?.isApproximate}
+                heightClassName="h-[220px]"
+              />
+              <div className="px-3 py-2 bg-[var(--surface-neutral-subtle)] border-t border-[var(--border-neutral-weaker)] text-[12px] text-[var(--content-neutral-stronger)] flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 min-w-0 truncate">
+                  <MapPin className="w-3.5 h-3.5 text-[var(--brand-action)] shrink-0" />
+                  <span className="truncate">
+                    {listing.city}، {listing.coordinates.streetHint || listing.neighborhood}
                   </span>
-                </div>
+                </span>
+                {listing.coordinates?.isApproximate && (
+                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)]">
+                    محدوده تقریبی
+                  </span>
+                )}
               </div>
             </div>
 

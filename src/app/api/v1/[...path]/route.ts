@@ -68,9 +68,15 @@ async function handleProxy(
   if (originHeader) forwardHeaders.set('origin', originHeader);
   if (refererHeader) forwardHeaders.set('referer', refererHeader);
 
-  const clientIp =
-    req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
-  forwardHeaders.set('x-forwarded-for', clientIp);
+  const rawRealIp = req.headers.get('x-real-ip')?.trim();
+  const forwardedChain = (req.headers.get('x-forwarded-for') || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const candidateIp =
+    rawRealIp || (forwardedChain.length > 0 ? forwardedChain[forwardedChain.length - 1] : '') || '127.0.0.1';
+  const safeIp = /^[\da-fA-F.:]{3,45}$/.test(candidateIp) ? candidateIp : '127.0.0.1';
+  forwardHeaders.set('x-forwarded-for', safeIp);
 
   const method = req.method.toUpperCase();
   const hasBody = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';

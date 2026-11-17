@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
+import { IRAN_CITY_COORDS } from '@/components/InteractiveMap';
+import { tahatorApi } from '@/lib/apiClient';
 import {
   X,
   Search,
@@ -40,6 +43,15 @@ import {
   generateSmartChatReplies,
   normalizeDigits,
 } from '@/lib/offlineAi';
+
+const InteractiveMap = dynamic(() => import('@/components/InteractiveMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[190px] w-full flex items-center justify-center bg-[var(--surface-neutral-weak)] text-[12px] text-[var(--content-neutral-default)]">
+      در حال بارگذاری نقشه...
+    </div>
+  ),
+});
 
 /* -------------------------------------------------------------------------- */
 /* 0. Full Categories Modal (📂 همه آگهی‌ها)                                  */
@@ -340,9 +352,15 @@ export function PostAdModal({
   const [nationalId, setNationalId] = useState('');
   const [address, setAddress] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [pinPos, setPinPos] = useState<{ x: number; y: number } | null>({ x: 50, y: 50 });
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>({
+    lat: IRAN_CITY_COORDS['تهران'][0],
+    lng: IRAN_CITY_COORDS['تهران'][1],
+  });
+  const [isApproximateLoc, setIsApproximateLoc] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [hasExchange, setHasExchange] = useState(true);
   const [exchangeWith, setExchangeWith] = useState('');
+  const [hasInstallmentPlan, setHasInstallmentPlan] = useState(true);
   const [description, setDescription] = useState('');
   const [isVerifiedPhotos, setIsVerifiedPhotos] = useState<'yes' | 'no'>('yes');
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -366,6 +384,8 @@ export function PostAdModal({
     setCity(newCity);
     const obj = CITIES.find((c) => c.name === newCity);
     if (obj && obj.neighborhoods.length > 0) setNeighborhood(obj.neighborhoods[0]);
+    const base = IRAN_CITY_COORDS[newCity] || IRAN_CITY_COORDS['تهران'];
+    setPickedCoords({ lat: base[0], lng: base[1] });
   };
 
   const handleRunAiCopilot = () => {
@@ -392,17 +412,32 @@ export function PostAdModal({
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []).slice(0, 7 - uploadedImages.length);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setUploadedImages((prev) => [...prev.slice(0, 6), reader.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    if (files.length === 0) return;
+
+    const oversized = files.find((f) => f.size > 5 * 1024 * 1024);
+    if (oversized) {
+      setError('حجم هر تصویر نباید بیشتر از ۵ مگابایت باشد.');
+      return;
+    }
+
+    setError('');
+    setUploadingImages(true);
+    try {
+      const res = await tahatorApi.uploadImages(files);
+      const urls = res.items.map((item) => item.url);
+      setUploadedImages((prev) => [...prev, ...urls].slice(0, 7));
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'برای آپلود امن تصاویر، ابتدا وارد حساب کاربری خود شوید (فرمت JPEG، PNG یا WEBP).'
+      );
+    } finally {
+      setUploadingImages(false);
+      e.target.value = '';
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -416,6 +451,10 @@ export function PostAdModal({
     const cleanPhone = normalizeDigits(phone1.trim());
     if (!cleanPhone || cleanPhone.length < 10) {
       setError('لطفاً شماره تماس اول معتبر وارد کنید.');
+      return;
+    }
+    if (!pickedCoords) {
+      setError('لطفاً موقعیت مکانی دقیق آگهی را روی نقشه دیوارگونه مشخص کنید.');
       return;
     }
 
@@ -435,7 +474,7 @@ export function PostAdModal({
       isNegotiable: cleanPrice === 0,
       hasExchange,
       exchangeWith: hasExchange ? exchangeWith.trim() || 'کالا، خودرو یا ملک هم‌ارزش' : undefined,
-      hasInstallmentPlan: true,
+      hasInstallmentPlan,
       isVerifiedPhotos: isVerifiedPhotos === 'yes',
       badge: hasExchange ? 'معاوضه' : undefined,
       publishedAt: 'لحظاتی پیش',
@@ -453,9 +492,11 @@ export function PostAdModal({
       sellerPhone: toPersianDigits(cleanPhone),
       sellerName: 'کاربر تهاتر آپ',
       coordinates: {
-        lat: pinPos ? 35.7 + pinPos.y * 0.001 : 35.72,
-        lng: pinPos ? 51.3 + pinPos.x * 0.001 : 51.35,
+        lat: pickedCoords.lat,
+        lng: pickedCoords.lng,
         streetHint: address.trim() || `محدوده ${neighborhood}`,
+        isApproximate: isApproximateLoc,
+        hasCoords: true,
       },
       isUserCreated: true,
     };
@@ -671,63 +712,62 @@ export function PostAdModal({
             </div>
           </div>
 
-          {/* موقعیت آگهی روی نقشه (اختیاری) */}
+          {/* موقعیت دقیق آگهی روی نقشه (دیوارگونه - الزامی) */}
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-              <label className="text-[13px] font-medium">
-                موقعیت آگهی روی نقشه (اختیاری)
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPinPos({ x: 52, y: 48 })}
-                  className="px-2.5 py-1 rounded-[4px] bg-[var(--surface-neutral-weak)] hover:bg-[var(--brand-soft)] text-[11px] font-medium text-[var(--content-neutral-stronger)]"
-                >
-                  📍 مکان فعلی من
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPinPos(null)}
-                  className="px-2.5 py-1 rounded-[4px] bg-[var(--surface-neutral-weak)] hover:bg-[var(--brand-soft)] text-[11px] font-medium text-[var(--semantic-negative)]"
-                >
-                  ✖ حذف موقعیت
-                </button>
+              <div>
+                <label className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                  موقعیت مکانی آگهی روی نقشه *
+                </label>
+                <p className="text-[11px] text-[var(--content-neutral-default)] mt-0.5">
+                  نقشه را جابه‌جا کنید تا پین قرمز روی محل دقیق ملک یا خودرو قرار گیرد.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const base = IRAN_CITY_COORDS[city] || IRAN_CITY_COORDS['تهران'];
+                  setPickedCoords({ lat: base[0], lng: base[1] });
+                }}
+                className="px-2.5 py-1 rounded-[4px] bg-[var(--surface-neutral-weak)] hover:bg-[var(--brand-soft)] text-[11px] font-medium text-[var(--content-neutral-stronger)]"
+              >
+                📍 مرکز {city}
+              </button>
             </div>
-            <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-                const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-                setPinPos({ x, y });
+            <InteractiveMap
+              mode="picker"
+              selectedCity={city}
+              selectedNeighborhood={neighborhood}
+              centerLat={pickedCoords?.lat}
+              centerLng={pickedCoords?.lng}
+              isApproximate={isApproximateLoc}
+              onToggleApproximate={setIsApproximateLoc}
+              onPickLocation={(coords) => {
+                setPickedCoords({ lat: coords.lat, lng: coords.lng });
+                if (typeof coords.isApproximate === 'boolean') {
+                  setIsApproximateLoc(coords.isApproximate);
+                }
               }}
-              className="relative h-[126px] rounded-[6px] border border-[var(--border-neutral-weaker)] bg-[#eef1f5] overflow-hidden cursor-crosshair"
-            >
-              <svg className="w-full h-full opacity-70" viewBox="0 0 400 130" preserveAspectRatio="none">
-                <path
-                  d="M0 35 L400 45 M0 90 L400 85 M90 0 L75 130 M200 0 L220 130 M320 0 L310 130"
-                  stroke="#ffffff"
-                  strokeWidth="6"
-                />
-              </svg>
-              {pinPos && (
-                <div
-                  className="absolute -translate-x-1/2 -translate-y-full transition-all"
-                  style={{ left: `${pinPos.x}%`, top: `${pinPos.y}%` }}
-                >
-                  <MapPin className="w-7 h-7 text-[var(--brand-action)] fill-[var(--brand-soft)] drop-shadow" />
-                </div>
-              )}
-              <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-white/90 text-[11px] text-[var(--content-neutral-default)]">
-                {pinPos ? `${city} - ${neighborhood}` : 'موقعیتی انتخاب نشده'}
+              heightClassName="h-[250px]"
+            />
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--content-neutral-default)]">
+              <span>
+                {pickedCoords
+                  ? `مختصات ثبت‌شده: ${pickedCoords.lat.toFixed(4)}، ${pickedCoords.lng.toFixed(4)} (${city} - ${neighborhood})`
+                  : 'موقعیتی روی نقشه انتخاب نشده است'}
               </span>
+              {isApproximateLoc && (
+                <span className="px-2 py-0.5 rounded bg-[var(--semantic-warning-soft)] text-[var(--semantic-warning)] font-bold">
+                  نمایش به صورت محدودهٔ تقریبی (دایره ۴۵۰ متری)
+                </span>
+              )}
             </div>
           </div>
 
-          {/* امکان معاوضه */}
+          {/* امکان معاوضه و تسهیلات ۵۰/۵۰ */}
           <div className="p-3.5 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2.5">
             <label className="block text-[13px] font-bold text-[var(--content-neutral-stronger)]">
-              امکان معاوضه
+              امکان معاوضه و فروش اقساطی
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -738,7 +778,19 @@ export function PostAdModal({
               />
               <span className="text-[13px] font-medium text-[var(--brand-primary)] flex items-center gap-1.5">
                 <ArrowLeftRight className="w-4 h-4" />
-                <span>بله - امکان معاوضه وجود دارد</span>
+                <span>بله - امکان معاوضه (تهاتر) وجود دارد</span>
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasInstallmentPlan}
+                onChange={(e) => setHasInstallmentPlan(e.target.checked)}
+                className="accent-[var(--brand-action)] w-4 h-4"
+              />
+              <span className="text-[13px] font-medium text-[var(--semantic-warning)] flex items-center gap-1.5">
+                <Percent className="w-4 h-4" />
+                <span>امکان خرید اقساطی با تسهیلات ۵۰/۵۰ (۱ تا ۵ سال · حتی بدون پیش‌پرداخت نقدی)</span>
               </span>
             </label>
             {hasExchange && (
@@ -760,7 +812,7 @@ export function PostAdModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="توضیحات آگهی خود را بنویسید..."
-              className="w-full p-3 rounded-[4px] border border-[var(--border-neutral-weaker)] focus:border-[var(--brand-action)] focus:outline-none text-[13px]"
+              className="kt-input !h-auto py-2.5 text-[13px] w-full"
             />
           </div>
 
@@ -801,11 +853,12 @@ export function PostAdModal({
             <div className="flex flex-wrap items-center gap-2.5">
               <label className="w-24 h-20 rounded-[6px] border-2 border-dashed border-[var(--border-neutral-weak)] hover:border-[var(--brand-action)] flex flex-col items-center justify-center gap-1 text-[11px] text-[var(--content-neutral-default)] cursor-pointer transition-colors px-2 text-center">
                 <Upload className="w-4 h-4" />
-                <span>+ · افزودن عکس</span>
+                <span>{uploadingImages ? 'در حال آپلود...' : '+ · افزودن عکس'}</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   multiple
+                  disabled={uploadingImages}
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -855,43 +908,59 @@ export function FacilitiesModal({
   onOpenAdminChat: () => void;
 }) {
   const [calcMethod, setCalcMethod] = useState<'monthly' | 'annual'>('annual');
-  const [amountInput, setAmountInput] = useState('500000000');
+  const [inputMode, setInputMode] = useState<'deal5050' | 'directLoan'>('deal5050');
+  const [zeroCashBarter, setZeroCashBarter] = useState(true);
+  const [amountInput, setAmountInput] = useState('2000000000');
   const [rateInput, setRateInput] = useState('22');
-  const [monthsInput, setMonthsInput] = useState('24');
+  const [monthsInput, setMonthsInput] = useState('36');
   const [computed, setComputed] = useState<{
-    amount: number;
+    rawAmount: number;
+    loanAmount: number;
     rate: number;
     months: number;
     method: 'monthly' | 'annual';
+    mode: 'deal5050' | 'directLoan';
   }>({
-    amount: 500_000_000,
+    rawAmount: 2_000_000_000,
+    loanAmount: 1_000_000_000,
     rate: 22,
-    months: 24,
+    months: 36,
     method: 'annual',
+    mode: 'deal5050',
   });
 
   const handleCalculate = (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = Math.max(0, Number(amountInput.replace(/[^\d]/g, '')) || 0);
-    const rate = Math.max(0, Number(rateInput) || 0);
-    const months = Math.max(1, Number(monthsInput) || 1);
-    setComputed({ amount, rate, months, method: calcMethod });
+    const rawAmount = Math.max(0, Number(normalizeDigits(amountInput).replace(/[^\d]/g, '')) || 0);
+    const rate = Math.max(0, Number(normalizeDigits(rateInput)) || 0);
+    const months = Math.min(60, Math.max(12, Number(normalizeDigits(monthsInput)) || 36));
+    const loanAmount = inputMode === 'deal5050' ? Math.round(rawAmount * 0.5) : rawAmount;
+    setComputed({ rawAmount, loanAmount, rate, months, method: calcMethod, mode: inputMode });
+  };
+
+  const applyPresetMonths = (m: number) => {
+    setMonthsInput(String(m));
+    const rawAmount = Math.max(0, Number(normalizeDigits(amountInput).replace(/[^\d]/g, '')) || 0);
+    const rate = Math.max(0, Number(normalizeDigits(rateInput)) || 0);
+    const loanAmount = inputMode === 'deal5050' ? Math.round(rawAmount * 0.5) : rawAmount;
+    setComputed({ rawAmount, loanAmount, rate, months: m, method: calcMethod, mode: inputMode });
   };
 
   const calculation = useMemo(() => {
-    const { amount, rate, months, method } = computed;
-    const monthlyRate = method === 'monthly' ? rate / 100 : rate / 100 / 12;
-    const factor = Math.pow(1 + monthlyRate, months);
-    const monthlyPayment =
-      monthlyRate === 0
-        ? amount / months
-        : (amount * (monthlyRate * factor)) / (factor - 1);
-    const totalPayment = monthlyPayment * months;
-    const totalInterest = totalPayment - amount;
+    const { rawAmount, loanAmount, rate, months, method, mode } = computed;
+    const totalInterest =
+      method === 'monthly'
+        ? months * ((rate / 12 / 100) * loanAmount)
+        : loanAmount * ((rate / 100) * (months / 12));
+    const totalPayment = loanAmount + totalInterest;
+    const monthlyPayment = months > 0 ? totalPayment / months : 0;
     const interestRatio =
       totalPayment > 0 ? Math.round((totalInterest / totalPayment) * 100) : 0;
+    const downPayment = mode === 'deal5050' ? Math.max(0, rawAmount - loanAmount) : 0;
 
     return {
+      downPayment: Math.round(downPayment),
+      loanAmount: Math.round(loanAmount),
       monthlyPayment: Math.round(monthlyPayment),
       totalPayment: Math.round(totalPayment),
       totalInterest: Math.round(totalInterest),
@@ -905,13 +974,13 @@ export function FacilitiesModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[580px] bg-[var(--surface-neutral-weaker)] rounded-[8px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+        className="w-full max-w-[610px] bg-[var(--surface-neutral-weaker)] rounded-[8px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Calculator className="w-5 h-5 text-[var(--brand-primary)]" />
-            <h3 className="text-[17px] font-bold">محاسبه آنلاین سود و قسط</h3>
+            <h3 className="text-[17px] font-bold">محاسبه‌گر تسهیلات و اقساط ۵۰/۵۰ (۱ تا ۵ سال)</h3>
           </div>
           <button
             type="button"
@@ -924,22 +993,83 @@ export function FacilitiesModal({
 
         <form onSubmit={handleCalculate} className="p-5 overflow-y-auto space-y-4">
           {/* Verbatim Intro Text from tahator.app */}
-          <div className="p-3.5 rounded-[6px] bg-[var(--brand-soft)] text-[13px] leading-[23px] text-[var(--content-neutral-stronger)] space-y-1">
-            <p className="font-bold text-[var(--brand-primary)]">
-              فرصت خرید را به تعویق نیندازید!
+          <div className="p-3.5 rounded-[6px] bg-[var(--brand-soft)] text-[12.5px] leading-[23px] text-[var(--content-neutral-stronger)] space-y-1.5 border border-[var(--brand-action)]/25">
+            <p className="font-bold text-[var(--brand-primary)] text-[13.5px]">
+              فرصت خرید ملک و خودرو را به تعویق نیندازید! (طرح ۵۰/۵۰ تهاتر آپ)
             </p>
             <p>
-              اگر ملکی، خودرویی یا دارایی ارزشمندی دارید و قصد خرید ملک، خودرو یا کالای دیگری را دارید، در tahator.app درخواست خود را ثبت کنید.
+              ۵۰٪ ارزش معامله را نقد بپردازید یا <strong>حتی بدون پیش‌پرداخت نقدی</strong> با تهاتر ملک، خودرو یا موتورسیکلت تأمین کنید و ۵۰٪ مابقی را در اقساط <strong>۱ تا ۵ سال (۱۲ تا ۶۰ ماه)</strong> بپردازید.
             </p>
-            <p>
-              با امکان تهاتر بخشی از ارزش معامله و بررسی شرایط پرداخت اقساطی، راهکار مناسب خود را برای انجام معامله پیدا کنید.
+            <p className="text-[11.5px] text-[var(--content-neutral-default)]">
+              پشتیبانی مستقیم پرونده‌های تسهیلات: <span className="font-bold dir-ltr">{toPersianDigits('02191016487')}</span>
             </p>
-            <p className="font-bold text-[var(--brand-primary)] pt-0.5">
-              tahator.app هوشمندانه معامله کنید، آسان‌تر خرید کنید
-            </p>
-            <p className="text-[12px] text-[var(--content-neutral-default)]">
-              برای محاسبه قسط و سود در خرید اقساطی گوشی، کالا و ... از پارامترهای کادر زیر را وارد کنید و روی محاسبه کلیک کنید.
-            </p>
+          </div>
+
+          {/* انتخاب نحوه محاسبه ۵۰/۵۰ یا مبلغ مستقیم وام */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setInputMode('deal5050')}
+              className={`flex-1 py-2 px-3 rounded-[6px] border text-[12px] font-bold transition-colors ${
+                inputMode === 'deal5050'
+                  ? 'bg-[var(--brand-action)] text-white border-[var(--brand-action)]'
+                  : 'bg-[var(--surface-neutral-default)] border-[var(--border-neutral-weaker)] text-[var(--content-neutral-stronger)]'
+              }`}
+            >
+              محاسبه بر اساس قیمت کل ملک/خودرو (۵۰/۵۰)
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode('directLoan')}
+              className={`flex-1 py-2 px-3 rounded-[6px] border text-[12px] font-bold transition-colors ${
+                inputMode === 'directLoan'
+                  ? 'bg-[var(--brand-action)] text-white border-[var(--brand-action)]'
+                  : 'bg-[var(--surface-neutral-default)] border-[var(--border-neutral-weaker)] text-[var(--content-neutral-stronger)]'
+              }`}
+            >
+              وارد کردن مستقیم مبلغ تسهیلات
+            </button>
+          </div>
+
+          {inputMode === 'deal5050' && (
+            <label className="flex items-center gap-2 p-2.5 rounded-[6px] bg-[var(--semantic-positive-soft)] text-[var(--semantic-positive)] text-[12px] font-bold cursor-pointer">
+              <input
+                type="checkbox"
+                checked={zeroCashBarter}
+                onChange={(e) => setZeroCashBarter(e.target.checked)}
+                className="accent-[var(--semantic-positive)] w-4 h-4"
+              />
+              <span>بدون پیش‌پرداخت نقدی (تأمین ۵۰٪ اول از طریق تهاتر دارایی غیرنقدی)</span>
+            </label>
+          )}
+
+          {/* بازه ۱ تا ۵ سال (کلیدهای سریع) */}
+          <div>
+            <label className="block text-[12px] font-medium text-[var(--content-neutral-default)] mb-1.5">
+              مدت بازپرداخت اقساط (۱ تا ۵ سال)
+            </label>
+            <div className="grid grid-cols-5 gap-1.5">
+              {[
+                { m: 12, label: '۱ سال' },
+                { m: 24, label: '۲ سال' },
+                { m: 36, label: '۳ سال' },
+                { m: 48, label: '۴ سال' },
+                { m: 60, label: '۵ سال' },
+              ].map((term) => (
+                <button
+                  key={term.m}
+                  type="button"
+                  onClick={() => applyPresetMonths(term.m)}
+                  className={`py-1.5 rounded-[6px] border text-[12px] font-bold transition-colors ${
+                    Number(monthsInput) === term.m
+                      ? 'bg-[var(--brand-soft)] border-[var(--brand-action)] text-[var(--brand-primary)]'
+                      : 'border-[var(--border-neutral-weaker)] text-[var(--content-neutral-default)] hover:bg-[var(--surface-neutral-weak)]'
+                  }`}
+                >
+                  {term.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* روش محاسبه سود */}
@@ -951,18 +1081,18 @@ export function FacilitiesModal({
                 onChange={(e) => setCalcMethod(e.target.value as 'monthly' | 'annual')}
                 className="kt-input"
               >
-                <option value="annual">سالانه</option>
+                <option value="annual">سالانه (نرخ بانکی سالانه)</option>
                 <option value="monthly">ماهانه</option>
               </select>
             </div>
             <div>
               <label className="block text-[13px] font-medium mb-1">
-                تعداد قسط (ماه) *
+                تعداد قسط (۱۲ تا ۶۰ ماه) *
               </label>
               <input
                 type="number"
-                min={1}
-                max={120}
+                min={12}
+                max={60}
                 value={monthsInput}
                 onChange={(e) => setMonthsInput(e.target.value)}
                 className="kt-input text-left dir-ltr"
@@ -973,23 +1103,25 @@ export function FacilitiesModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[13px] font-medium mb-1">
-                مبلغ باقیمانده برای قسط‌بندی (تومان) *
+                {inputMode === 'deal5050'
+                  ? 'ارزش کل ملک یا خودرو (تومان) *'
+                  : 'مبلغ تسهیلات درخواستی (تومان) *'}
               </label>
               <input
                 type="number"
                 min={0}
-                step={1_000_000}
+                step={10_000_000}
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
                 className="kt-input text-left dir-ltr"
               />
             </div>
             <div>
-              <label className="block text-[13px] font-medium mb-1">نرخ سود (%) *</label>
+              <label className="block text-[13px] font-medium mb-1">نرخ سود (% سالانه) *</label>
               <input
                 type="number"
                 min={0}
-                max={100}
+                max={48}
                 step={0.5}
                 value={rateInput}
                 onChange={(e) => setRateInput(e.target.value)}
@@ -1004,15 +1136,31 @@ export function FacilitiesModal({
               انصراف
             </button>
             <button type="submit" className="kt-button--primary !px-6">
-              📊 محاسبه
+              📊 محاسبه قسط و سود
             </button>
           </div>
 
           {/* Output Breakdown */}
-          <div className="p-4 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-3">
+          <div className="p-4 rounded-[6px] bg-[var(--surface-neutral-subtle)] border border-[var(--border-neutral-weaker)] space-y-2.5">
+            {computed.mode === 'deal5050' && (
+              <div className="flex items-center justify-between text-[12.5px] pb-2 border-b border-[var(--border-neutral-weaker)]">
+                <span className="text-[var(--content-neutral-default)]">
+                  {zeroCashBarter ? '۵۰٪ آورده از طریق تهاتر دارایی (۰ نقد):' : '۵۰٪ پیش‌پرداخت نقد:'}
+                </span>
+                <span className="font-bold text-[var(--semantic-positive)]">
+                  {formatToman(calculation.downPayment)}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="text-[var(--content-neutral-default)]">اصل تسهیلات ۵۰٪:</span>
+              <span className="font-bold text-[var(--content-neutral-stronger)]">
+                {formatToman(calculation.loanAmount)}
+              </span>
+            </div>
             <div className="flex items-center justify-between">
-              <span className="text-[13px] text-[var(--content-neutral-default)]">
-                مبلغ هر قسط:
+              <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                مبلغ هر قسط ماهانه:
               </span>
               <span className="text-[17px] font-extrabold text-[var(--brand-primary)]">
                 {formatToman(calculation.monthlyPayment)}
@@ -1045,8 +1193,8 @@ export function FacilitiesModal({
                 />
               </div>
               <div className="flex justify-between text-[11px] text-[var(--content-neutral-default)] mt-1">
-                <span>اصل مبلغ ({toPersianDigits(100 - calculation.interestRatio)}٪)</span>
-                <span>سود ({toPersianDigits(calculation.interestRatio)}٪)</span>
+                <span>اصل تسهیلات ({toPersianDigits(100 - calculation.interestRatio)}٪)</span>
+                <span>سود دوره ({toPersianDigits(calculation.interestRatio)}٪)</span>
               </div>
             </div>
           </div>
@@ -1086,13 +1234,13 @@ export function InstallmentPlanModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[560px] bg-[var(--surface-neutral-weaker)] rounded-[8px] shadow-2xl overflow-hidden"
+        className="w-full max-w-[580px] bg-[var(--surface-neutral-weaker)] rounded-[8px] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-[var(--border-neutral-weaker)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Percent className="w-5 h-5 text-[var(--brand-primary)]" />
-            <h3 className="text-[17px] font-bold">شرایط خرید اقساطی و تهاتر ۵۰/۵۰</h3>
+            <h3 className="text-[17px] font-bold">شرایط تسهیلات و خرید اقساطی ۵۰/۵۰ (۱ تا ۵ سال)</h3>
           </div>
           <button
             type="button"
@@ -1104,32 +1252,32 @@ export function InstallmentPlanModal({
         </div>
 
         <div className="p-5 space-y-4 text-[14px] leading-[26px]">
-          <div className="p-4 rounded-[6px] bg-[var(--brand-soft)] text-[var(--brand-primary)]">
-            <div className="font-bold text-[15px] mb-1">
-              ۵۰٪ تهاتر کالا، ملک یا خودرو + ۵۰٪ اقساط بانکی بلندمدت
+          <div className="p-4 rounded-[6px] bg-[var(--brand-soft)] text-[var(--brand-primary)] space-y-1.5 border border-[var(--brand-action)]/25">
+            <div className="font-bold text-[15px]">
+              ۵۰٪ نقد یا تهاتر (حتی بدون پیش‌پرداخت نقدی) + ۵۰٪ اقساط ۱ تا ۵ سال
             </div>
-            <p className="text-[13px]">
-              در پلتفرم تهاتر آپ (tahator.app)، اگر کالا یا ملک شما نیمی از ارزش معامله را پوشش دهد، مابه‌التفاوت آن از طریق تسهیلات اقساطی بین ۶ تا ۳۶ ماه تقسیط می‌شود.
+            <p className="text-[13px] text-[var(--content-neutral-stronger)]">
+              اگر امکان تأمین ۵۰٪ پیش‌پرداخت نقدی را ندارید، می‌توانید آورده خود را از طریق ارائه ملک، خودرو، موتورسیکلت یا دارایی غیرنقدی قابل تهاتر تأمین کنید و مابقی را در اقساط بلندمدت ۱۲ تا ۶۰ ماهه (۱ تا ۵ سال) بپردازید.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-3 rounded-[6px] border border-[var(--border-neutral-weaker)]">
+            <div className="p-3 rounded-[6px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)]">
               <div className="font-bold text-[13px] mb-1">۱. انتخاب و کارشناسی</div>
               <p className="text-[12px] text-[var(--content-neutral-default)]">
-                انتخاب آگهی و ارزش‌گذاری عادلانه دو طرف با حضور کارشناس.
+                انتخاب ملک یا خودرو و ارزش‌گذاری رسمی دو طرف با حضور کارشناس تهاتر آپ.
               </p>
             </div>
-            <div className="p-3 rounded-[6px] border border-[var(--border-neutral-weaker)]">
-              <div className="font-bold text-[13px] mb-1">۲. تهاتر بخش اول</div>
+            <div className="p-3 rounded-[6px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)]">
+              <div className="font-bold text-[13px] mb-1">۲. تأمین ۵۰٪ (نقد یا تهاتر)</div>
               <p className="text-[12px] text-[var(--content-neutral-default)]">
-                پرداخت یا تحویل بخشی از ارزش معامله به صورت نقد یا تهاتر کالا و خودرو.
+                پوشش نیمه اول قرارداد به صورت نقدی یا با واگذاری دارایی غیرنقدی (بدون نقدینگی).
               </p>
             </div>
-            <div className="p-3 rounded-[6px] border border-[var(--border-neutral-weaker)]">
-              <div className="font-bold text-[13px] mb-1">۳. تقسیط باقیمانده</div>
+            <div className="p-3 rounded-[6px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)]">
+              <div className="font-bold text-[13px] mb-1">۳. تقسیط ۱۲ تا ۶۰ ماهه</div>
               <p className="text-[12px] text-[var(--content-neutral-default)]">
-                بررسی شرایط پرداخت اقساطی متناسب با توان پرداخت خریدار.
+                پرداخت ۵۰٪ دوم طی اقساط ۱ تا ۵ سال متناسب با توان بازپرداخت شما.
               </p>
             </div>
           </div>
@@ -1137,9 +1285,11 @@ export function InstallmentPlanModal({
           <div className="p-3 rounded-[6px] bg-[var(--surface-neutral-weak)] flex items-center justify-between text-[13px]">
             <span className="flex items-center gap-2 font-medium">
               <Phone className="w-4 h-4 text-[var(--brand-action)]" />
-              <span>خط مستقیم مشاوره اقساط و تهاتر:</span>
+              <span>خط مستقیم مشاوره تسهیلات و اقساط:</span>
             </span>
-            <span className="font-bold dir-ltr">{toPersianDigits('02191016487')}</span>
+            <a href="tel:02191016487" className="font-bold dir-ltr text-[var(--brand-primary)] hover:underline">
+              {toPersianDigits('02191016487')}
+            </a>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 pt-2">
@@ -1152,7 +1302,7 @@ export function InstallmentPlanModal({
               className="kt-button--outlined flex-1"
             >
               <Calculator className="w-4 h-4" />
-              <span>محاسبه آنلاین سود و قسط</span>
+              <span>محاسبه آنلاین سود و قسط (۱ تا ۵ سال)</span>
             </button>
             <button
               type="button"
@@ -1163,7 +1313,7 @@ export function InstallmentPlanModal({
               className="kt-button--primary flex-1"
             >
               <MessageSquare className="w-4 h-4" />
-              <span>گفتگو با کارشناس</span>
+              <span>گفتگو با کارشناس تسهیلات</span>
             </button>
           </div>
         </div>

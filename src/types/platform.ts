@@ -1,4 +1,13 @@
-export type UserRole = 'user' | 'business' | 'moderator' | 'support' | 'admin';
+export type UserRole =
+  | 'user'
+  | 'business'
+  | 'business_agent'
+  | 'moderator'
+  | 'appraiser'
+  | 'credit_officer'
+  | 'support'
+  | 'arbitrator'
+  | 'admin';
 
 export type DashboardTab =
   | 'overview'
@@ -42,31 +51,130 @@ export const ROLE_META: Record<UserRole, RoleMeta> = {
     badgeText: 'کسب‌وکار',
     permissions: ['فروشگاه اختصاصی در تهاتر آپ', 'مدیریت مشاوران زیرمجموعه', 'آمار بازدید و تماس حرفه‌ای'],
   },
+  business_agent: {
+    id: 'business_agent',
+    title: 'مشاور و نماینده فروش کسب‌وکار',
+    shortTitle: 'مشاور فروش',
+    description: 'پیگیری فایل‌های سپرده‌شده توسط آژانس یا نمایشگاه، مدیریت پیشنهادهای تهاتر مشتریان و ثبت گزارش بازدید.',
+    badgeText: 'مشاور فروش',
+    permissions: ['مدیریت آگهی‌های آژانس', 'پاسخ به سرنخ‌ها و پیشنهادهای تهاتر', 'ثبت وضعیت بازدید میدانی'],
+  },
   moderator: {
     id: 'moderator',
-    title: 'کارشناس بررسی و ناظر آگهی',
-    shortTitle: 'ناظر آگهی',
-    description: 'صف انتشار آگهی‌ها، بررسی ممیزی هوش مصنوعی آفلاین، تایید تصاویر مالک و رسیدگی به گزارش‌ها.',
+    title: 'کارشناس بررسی، ناظر آگهی و تحریریه',
+    shortTitle: 'ناظر و تحریریه',
+    description: 'صف انتشار آگهی‌ها، بررسی ممیزی هوش مصنوعی، تایید تصاویر مالک، مدیریت مقالات وبلاگ و گزارش‌ها.',
     badgeText: 'ناظر آگهی',
-    permissions: ['تایید / رد آگهی در صف انتظار', 'تایید نشان اصالت تصاویر', 'بررسی گزارش‌های تخلف'],
+    permissions: ['تایید / رد آگهی در صف انتظار', 'مدیریت و انتشار مقالات وبلاگ', 'بررسی گزارش‌های تخلف'],
+  },
+  appraiser: {
+    id: 'appraiser',
+    title: 'کارشناس ارزیابی و کارشناسی دارایی',
+    shortTitle: 'کارشناس ارزیابی',
+    description: 'اخذ درخواست‌های کارشناسی ملک، خودرو و موتورسیکلت، ثبت ارزش منصفانه، گزارش سلامت فنی و اصالت.',
+    badgeText: 'ارزیاب رسمی',
+    permissions: ['دریافت و رزرو پرونده کارشناسی', 'ثبت گزارش سلامت و قیمت منصفانه', 'تایید اصالت مدارک دارایی'],
+  },
+  credit_officer: {
+    id: 'credit_officer',
+    title: 'افسر اعتبار و تسهیلات ۵۰/۵۰',
+    shortTitle: 'افسر اعتبار',
+    description: 'بررسی پرونده‌های تسهیلات مابه‌التفاوت تهاتر، کنترل سقف اعتبار و صدور تایید یا رد دفترچه اقساط.',
+    badgeText: 'افسر اعتبار',
+    permissions: ['بررسی صف درخواست‌های اقساط ۵۰/۵۰', 'تایید یا اصلاح شرایط مالی', 'صدور دفترچه اقساط ماهانه'],
   },
   support: {
     id: 'support',
-    title: 'کارشناس پشتیبانی و حل اختلاف',
+    title: 'کارشناس پشتیبانی و ارتباط با کاربران',
     shortTitle: 'پشتیبان',
-    description: 'پاسخگویی به تیکت‌ها، پیگیری پرونده‌های اقساط ۵۰/۵۰، داوری معاوضه و رفع مسدودی حساب.',
+    description: 'پاسخگویی به تیکت‌های کاربران، مشاهده وضعیت حساب‌ها، رفع مسدودی و پیگیری شکایات.',
     badgeText: 'پشتیبان',
-    permissions: ['صندوق تیکت کاربران', 'پیگیری داوری و تسهیلات', 'مسدودی / رفع مسدودی حساب'],
+    permissions: ['صندوق تیکت کاربران', 'مشاهده وضعیت و رفع مسدودی حساب', 'پشتیبانی انتشار محتوای راهنما'],
+  },
+  arbitrator: {
+    id: 'arbitrator',
+    title: 'داور حقوقی تفاهم‌نامه‌های تهاتر',
+    shortTitle: 'داور حقوقی',
+    description: 'رسیدگی تخصصی به تفاهم‌نامه‌های درگیر اختلاف، تثبیت مرحله تحویل و صدور رای داوری الزام‌آور.',
+    badgeText: 'داور حقوقی',
+    permissions: ['مشاهده صف اختلافات تفاهم‌نامه‌ها', 'بررسی اسناد و پیام‌های طرفین', 'صدور رای نهایی داوری'],
   },
   admin: {
     id: 'admin',
     title: 'مدیر ارشد سیستم (سوپرادمین)',
     shortTitle: 'مدیر ارشد',
-    description: 'کنترل کامل کاربران و نقش‌ها، مدیریت کل آگهی‌ها، تعرفه‌های نردبان/اقساط و تنظیمات هوش مصنوعی آفلاین.',
+    description: 'کنترل کامل کاربران و نقش‌ها، ساخت نقش و داشبورد پویا، مدیریت کل آگهی‌ها، تعرفه‌ها، وبلاگ و لاگ امنیتی.',
     badgeText: 'مدیر ارشد',
-    permissions: ['تغییر نقش تمام کاربران', 'تنظیم تعرفه و نرخ تسهیلات', 'مدیریت موتور هوش مصنوعی آفلاین'],
+    permissions: ['انتصاب نقش و ساخت داشبورد پویا', 'تنظیم تعرفه و نرخ تسهیلات', 'مدیریت کل آگهی‌ها، وبلاگ و Audit Log'],
   },
 };
+
+export const ALL_ROLE_ORDER: UserRole[] = [
+  'user',
+  'business',
+  'business_agent',
+  'moderator',
+  'appraiser',
+  'credit_officer',
+  'support',
+  'arbitrator',
+  'admin',
+];
+
+export interface BlogCategory {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  sortOrder: number;
+  _count?: { posts: number };
+}
+
+export interface BlogPostItem {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  content?: string;
+  coverImage?: string | null;
+  tags: string[];
+  readMinutes: number;
+  status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  isFeatured: boolean;
+  viewsCount: number;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  publishedAt?: string | null;
+  createdAt?: string;
+  category: { id: string; slug: string; name: string };
+  author: { id: string; fullName: string };
+  comments?: Array<{
+    id: string;
+    authorName: string;
+    body: string;
+    createdAt: string;
+  }>;
+  related?: Array<{
+    id: string;
+    slug: string;
+    title: string;
+    excerpt: string;
+    coverImage?: string | null;
+    readMinutes: number;
+    publishedAt?: string | null;
+    category: { slug: string; name: string };
+  }>;
+  relatedPosts?: Array<{
+    id: string;
+    slug: string;
+    title: string;
+    excerpt: string;
+    coverImage?: string | null;
+    readMinutes: number;
+    publishedAt?: string | null;
+    category: { slug: string; name: string };
+  }>;
+}
 
 export function normalizeUserRole(raw: unknown): UserRole {
   if (typeof raw !== 'string') return 'user';
@@ -79,6 +187,8 @@ export function normalizeUserRole(raw: unknown): UserRole {
       candidate = candidate.replace(/^"+|"+$/g, '');
     }
   }
+  if (candidate === 'business_owner') return 'business';
+  if (candidate === 'super_admin') return 'admin';
   if (Object.prototype.hasOwnProperty.call(ROLE_META, candidate)) {
     return candidate as UserRole;
   }
@@ -150,7 +260,7 @@ export interface WalletTransaction {
   amount: number;
   type: 'credit' | 'debit';
   date: string;
-  status: 'موفق' | 'در انتظار';
+  status: 'موفق' | 'در انتظار' | 'ناموفق';
 }
 
 export interface BarterOffer {

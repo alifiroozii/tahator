@@ -58,6 +58,12 @@ interface UserDashboardModalProps {
   isLoggedIn: boolean;
   user: UserProfile;
   userRole: UserRole;
+  availableDashboards?: Array<{
+    roleCode: string;
+    titleFa: string;
+    shortTitleFa: string;
+    dashboardKey: string;
+  }>;
   onOpenAuthModal: () => void;
   onLogout: () => void;
   onUpdateProfile: (partial: Partial<UserProfile>) => void;
@@ -85,6 +91,7 @@ interface UserDashboardModalProps {
     updates: { title: string; price: number; hasExchange: boolean; exchangeWith: string; description: string }
   ) => void;
   onDeleteAd: (id: string, reason: string) => void;
+  onPinLocationAd?: (ad: Listing) => void;
   barterAssets: BarterAsset[];
   onAddBarterAsset: (asset: Omit<BarterAsset, 'id' | 'createdAt'>) => void;
   onDeleteBarterAsset: (id: string) => void;
@@ -145,6 +152,7 @@ export default function UserDashboardModal({
   isLoggedIn,
   user,
   userRole,
+  availableDashboards = [],
   onOpenAuthModal,
   onLogout,
   onUpdateProfile,
@@ -169,6 +177,7 @@ export default function UserDashboardModal({
   onRenewAd,
   onEditAd,
   onDeleteAd,
+  onPinLocationAd,
   barterAssets,
   onAddBarterAsset,
   onDeleteBarterAsset,
@@ -1057,6 +1066,7 @@ export default function UserDashboardModal({
               onEditAd={onEditAd}
               onDeleteAd={onDeleteAd}
               onRestoreArchivedAd={onRestoreArchivedAd}
+              onPinLocationAd={onPinLocationAd}
               onClose={onClose}
             />
           )}
@@ -1627,45 +1637,43 @@ export default function UserDashboardModal({
                 </div>
               </div>
 
-              {/* Quiet Collapsible Staff / Role Preview Switcher (hidden from public homepage & normal profile) */}
-              <details className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[#FAFAFA]">
-                <summary className="cursor-pointer text-[13px] font-bold text-[var(--content-neutral-stronger)] select-none">
-                  پیش‌نمایش پنل‌های همکاران و سطوح دسترسی (ویژه تست داخلی)
-                </summary>
-                <div className="mt-3 space-y-3">
-                  <div className="text-[12px] text-[var(--content-neutral-default)]">
-                    برای بررسی پنل اختصاصی هر سطح دسترسی (کسب‌وکار، ناظر آگهی، پشتیبان یا مدیریت سامانه)، می‌توانید موقتاً نقش تست را تغییر دهید:
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {(Object.keys(ROLE_META) as UserRole[]).map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => onSwitchRole(r)}
-                        className={`p-2 rounded-[6px] border text-[12px] text-center transition-colors ${
-                          userRole === r
-                            ? 'border-[var(--brand-action)] bg-[var(--brand-soft)] text-[var(--brand-primary)] font-bold'
-                            : 'border-[var(--border-neutral-weaker)] bg-white hover:bg-[var(--surface-neutral-weak)]'
-                        }`}
-                      >
-                        {ROLE_META[r].shortTitle}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenRolePanel();
-                      }}
-                      className="kt-button--outlined !h-[34px] !px-4 text-[12px]"
-                    >
-                      باز کردن پنل {getRoleMeta(userRole).shortTitle}
-                    </button>
-                  </div>
+              {/* Server-Authorized Multi-Role Access Panel (Zero client-side role escalation) */}
+              <div className="p-4 rounded-[8px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-subtle)] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[13px] font-bold text-[var(--content-neutral-stronger)]">
+                    دسترسی‌ها و میزهای کار تاییدشده توسط سرور
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-[var(--brand-soft)] text-[var(--brand-primary)] text-[11px] font-bold">
+                    {getRoleMeta(userRole).badgeText}
+                  </span>
                 </div>
-              </details>
+                {availableDashboards.filter((d) => d.roleCode !== 'user').length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-[12px] text-[var(--content-neutral-default)]">
+                      نقش‌های سازمانی تخصیص‌یافته به حساب شما:
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableDashboards.map((d) => (
+                        <button
+                          key={d.roleCode}
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenRolePanel();
+                          }}
+                          className="px-3 py-1.5 rounded-[6px] border border-[var(--border-neutral-weaker)] bg-[var(--surface-neutral-weaker)] hover:border-[var(--brand-action)] text-[12px] font-medium"
+                        >
+                          {d.shortTitleFa}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[12px] text-[var(--content-neutral-default)]">
+                    نقش فعال حساب شما «کاربر عادی» است. اختصاص یا تغییر نقش‌های مدیریتی و تخصصی فقط از طریق کنترل دسترسی سمت سرور (RBAC) انجام می‌شود.
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

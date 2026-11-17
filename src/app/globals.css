@@ -40,6 +40,86 @@
   --sidebar-width: 252px;
 }
 
+[data-theme='dark'] {
+  color-scheme: dark;
+  --brand-primary: #e04f4f;
+  --brand-action: #d83939;
+  --brand-hover: #ef5353;
+  --brand-active: #b82929;
+  --brand-soft: rgba(224, 79, 79, 0.18);
+  --brand-ring: rgba(224, 79, 79, 0.28);
+
+  --surface-neutral-weaker: #16161b;
+  --surface-neutral-weak: #22222b;
+  --surface-neutral-subtle: #111116;
+
+  --border-neutral-weaker: #2c2c36;
+  --border-neutral-weak: #3f3f4e;
+
+  --content-neutral-stronger: #f4f4f6;
+  --content-neutral-default: #a1a1b2;
+  --content-neutral-weak: #717182;
+  --content-neutral-on-color: #ffffff;
+
+  --semantic-positive: #34d399;
+  --semantic-positive-soft: rgba(16, 185, 129, 0.16);
+  --semantic-warning: #fbbf24;
+  --semantic-warning-soft: rgba(245, 158, 11, 0.16);
+  --semantic-negative: #f87171;
+  --semantic-info: #60a5fa;
+  --semantic-info-soft: rgba(59, 130, 246, 0.16);
+}
+
+[data-theme='dark'] body {
+  background-color: #111116;
+  color: #f4f4f6;
+}
+
+/* Smooth automatic theme adaptation for Tailwind utility surfaces in dark mode */
+[data-theme='dark'] .bg-white {
+  background-color: #16161b !important;
+}
+[data-theme='dark'] .bg-\[\#FAFAFA\],
+[data-theme='dark'] .bg-\[\#F8F8F8\],
+[data-theme='dark'] .bg-\[\#F5F5F5\] {
+  background-color: #1e1e26 !important;
+}
+[data-theme='dark'] .border-\[\#EDEDED\],
+[data-theme='dark'] .border-\[\#E0E0E0\],
+[data-theme='dark'] .border-\[\#EBEBEB\],
+[data-theme='dark'] .border-\[\#E5E5E5\],
+[data-theme='dark'] .border-black\/10,
+[data-theme='dark'] .border-black\/5 {
+  border-color: #2e2e3a !important;
+}
+[data-theme='dark'] .text-\[\#212121\],
+[data-theme='dark'] .text-\[\#111827\] {
+  color: #f4f4f6 !important;
+}
+[data-theme='dark'] .text-\[\#424242\],
+[data-theme='dark'] .text-\[\#555555\] {
+  color: #d4d4dc !important;
+}
+[data-theme='dark'] .text-\[\#757575\],
+[data-theme='dark'] .text-\[\#707070\] {
+  color: #a1a1b0 !important;
+}
+[data-theme='dark'] .leaflet-popup-content-wrapper,
+[data-theme='dark'] .leaflet-popup-tip {
+  background-color: #1c1c23;
+  color: #f4f4f6;
+}
+[data-theme='dark'] .leaflet-tile-pane {
+  filter: brightness(0.86) contrast(1.06) invert(0.92) hue-rotate(180deg);
+}
+
+.leaflet-container {
+  background-color: var(--surface-neutral-weak) !important;
+  background-image: linear-gradient(to right, rgba(120, 120, 140, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(120, 120, 140, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
 * {
   box-sizing: border-box;
 }

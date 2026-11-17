@@ -33,6 +33,7 @@ import AuthOtpModal from '@/components/AuthOtpModal';
 import RolePanelModal from '@/components/RolePanelModal';
 import AiAssistantModal from '@/components/AiAssistantModal';
 import MapFeedView from '@/components/MapFeedView';
+import MissingLocationModal, { UnpinnedListingPromptItem } from '@/components/MissingLocationModal';
 import { ApiClientError, BackendProfileResponse, tahatorApi } from '@/lib/apiClient';
 import { mapBackendListingToUi } from '@/lib/listingMapper';
 import {
@@ -208,7 +209,19 @@ export default function HomePage() {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [showMapView, setShowMapView] = useState(false);
+  const [unpinnedPromptItems, setUnpinnedPromptItems] = useState<UnpinnedListingPromptItem[]>([]);
+  const [showMissingLocationModal, setShowMissingLocationModal] = useState(false);
+  const [missingLocManual, setMissingLocManual] = useState(false);
+  const [missingLocDismissed, setMissingLocDismissed] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [availableDashboards, setAvailableDashboards] = useState<
+    Array<{ roleCode: string; titleFa: string; shortTitleFa: string; dashboardKey: string }>
+  >([]);
+  const [pendingGatewayTx, setPendingGatewayTx] = useState<{
+    authority: string;
+    amount: number;
+    bankName: string;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const triggerToast = (msg: string) => {
@@ -224,6 +237,8 @@ export default function HomePage() {
     setShowPostAdModal(false);
     setShowChatModal(false);
     setUserRole('user');
+    setAvailableDashboards([]);
+    setPendingGatewayTx(null);
     setUserProfile(DEFAULT_USER_PROFILE);
     setMyAdIds([]);
     setArchivedAds([]);
@@ -379,6 +394,13 @@ export default function HomePage() {
     const savedRecentSearch = readJsonSafe<string[]>('tahator_recent_searches', Array.isArray);
     if (savedRecentSearch) setRecentSearches(savedRecentSearch);
 
+    try {
+      const qParam = new URLSearchParams(window.location.search).get('q');
+      if (qParam && qParam.trim()) {
+        setSearchQuery(qParam.trim());
+      }
+    } catch {}
+
     void loadPublicCatalog();
     void syncSessionFromBackend();
 
@@ -457,7 +479,9 @@ export default function HomePage() {
         setWalletBalance(bal);
       }
     }
-    const primaryRole = normalizeUserRole(p.dashboards?.[0]?.roleCode);
+    const serverDashboards = Array.isArray(p.dashboards) ? p.dashboards : [];
+    setAvailableDashboards(serverDashboards);
+    const primaryRole = normalizeUserRole(serverDashboards[0]?.roleCode);
     setUserRole(primaryRole);
     setIsLoggedIn(true);
   };
@@ -471,13 +495,40 @@ export default function HomePage() {
         setShowAuthModal(true);
       } else {
         setForceOnboarding(false);
+        if (
+          profile.shouldPromptMapLocation &&
+          Array.isArray(profile.unpinnedListings) &&
+          profile.unpinnedListings.length > 0 &&
+          !missingLocDismissed
+        ) {
+          setUnpinnedPromptItems(profile.unpinnedListings);
+          setMissingLocManual(false);
+          setShowMissingLocationModal(true);
+        }
       }
 
-      const [walletData, sessionList, myListingsRes, archivedRes] = await Promise.all([
+      const [
+        walletData,
+        sessionList,
+        myListingsRes,
+        archivedRes,
+        savedBundle,
+        assetsRes,
+        offersRes,
+        installmentsRes,
+        chatThreadsRes,
+        notificationsRes,
+      ] = await Promise.all([
         tahatorApi.getMyWallet().catch(() => null),
         tahatorApi.getMySessions().catch(() => null),
         tahatorApi.getMyListings().catch(() => null),
         tahatorApi.getMyListings('archived').catch(() => null),
+        tahatorApi.getSavedBundle().catch(() => null),
+        tahatorApi.listBarterAssets().catch(() => null),
+        tahatorApi.listBarterOffers().catch(() => null),
+        tahatorApi.listMyInstallments().catch(() => null),
+        tahatorApi.listChatThreads().catch(() => null),
+        tahatorApi.listNotifications().catch(() => null),
       ]);
 
       if (walletData) {
@@ -487,17 +538,171 @@ export default function HomePage() {
           persistSafe('tahator_wallet_v2', bal);
         }
         if (Array.isArray(walletData.transactions)) {
-          const mappedTx: WalletTransaction[] = walletData.transactions.map((tx) => ({
-            id: tx.id,
-            title: tx.titleFa,
-            amount: Number(tx.amount) || 0,
-            type: tx.txType === 'CREDIT' || tx.txType === 'ESCROW_RELEASE' ? 'credit' : 'debit',
-            date: new Date(tx.createdAt).toLocaleDateString('fa-IR'),
-            status: tx.status === 'COMPLETED' ? 'موفق' : 'در انتظار',
-          }));
+          const mappedTx: WalletTransaction[] = walletData.transactions.map((tx) => {
+            const rawType = tx.type || tx.txType;
+            const isCredit =
+              rawType === 'CREDIT' || rawType === 'RELEASE' || rawType === 'ESCROW_RELEASE' || rawType === 'REFUND';
+            return {
+              id: tx.id,
+              title: tx.title || tx.titleFa || 'تراکنش کیف پول تهاتر آپ',
+              amount: Number(tx.amount) || 0,
+              type: isCredit ? 'credit' : 'debit',
+              date: new Date(tx.createdAt).toLocaleDateString('fa-IR'),
+              status:
+                tx.status === 'SUCCESS' || tx.status === 'COMPLETED'
+                  ? 'موفق'
+                  : tx.status === 'FAILED'
+                  ? 'ناموفق'
+                  : 'در انتظار',
+            };
+          });
           setTransactions(mappedTx);
           persistSafe('tahator_tx_v2', mappedTx);
         }
+      }
+
+      if (savedBundle) {
+        if (Array.isArray(savedBundle.bookmarks)) {
+          setBookmarks(savedBundle.bookmarks.map((b) => b.listing.id));
+        }
+        if (Array.isArray(savedBundle.notes)) {
+          const noteMap: Record<string, string> = {};
+          for (const n of savedBundle.notes) {
+            noteMap[n.listingId] = n.content;
+          }
+          setNotes(noteMap);
+        }
+        if (Array.isArray(savedBundle.savedSearches)) {
+          setSavedSearches(
+            savedBundle.savedSearches.map((s) => ({
+              id: s.id,
+              title: s.title,
+              query: s.query,
+              category: s.categorySlug || null,
+              cityLabel: s.cityLabel,
+              onlyExchange: s.onlyExchange,
+              notifyEnabled: s.notifyEnabled,
+              createdAt: new Date(s.createdAt).toLocaleDateString('fa-IR'),
+            }))
+          );
+        }
+        if (Array.isArray(savedBundle.recentViews)) {
+          setRecentIds(savedBundle.recentViews.map((rv) => rv.listing.id));
+        }
+      }
+
+      if (Array.isArray(assetsRes)) {
+        setBarterAssets(
+          assetsRes.map((a) => ({
+            id: a.id,
+            title: a.title,
+            category: a.category?.name || 'املاک',
+            estimatedValue: Number(a.estimatedValue) || 0,
+            condition:
+              a.condition === 'NEW'
+                ? 'پلمپ / صفر'
+                : a.condition === 'USED'
+                ? 'کارکرده سالم'
+                : 'در حد نو',
+            city: a.cityName,
+            swapPreference: a.swapPreference,
+            note: a.note || undefined,
+            createdAt: new Date(a.createdAt).toLocaleDateString('fa-IR'),
+          }))
+        );
+      }
+
+      if (Array.isArray(offersRes)) {
+        setBarterOffers(
+          offersRes.map((o) => {
+            const listingObj = (o.listing as { id?: string; title?: string; price?: string | number; images?: string[] }) || {};
+            const senderObj = (o.sender as { fullName?: string; phone?: string }) || {};
+            const receiverObj = (o.receiver as { fullName?: string; phone?: string }) || {};
+            const isReceived = o.receiverId === profile.id;
+            return {
+              id: String(o.id),
+              direction: isReceived ? 'received' : 'sent',
+              listingId: String(o.listingId || listingObj.id || ''),
+              listingTitle: String(listingObj.title || ''),
+              listingImage: listingObj.images?.[0] || '/ads/no-image.svg',
+              listingPrice: Number(listingObj.price || 0),
+              offeredItemTitle: String(o.offeredItemTitle || ''),
+              offeredEstimatedPrice: Number(o.offeredEstimatedPrice || 0),
+              cashDifference: Number(o.cashDifference || 0),
+              installmentRequested: Boolean(o.installmentRequested),
+              aiMatchPercent: Number(o.aiMatchPercent || 85),
+              proposerName: String((isReceived ? senderObj.fullName : receiverObj.fullName) || 'کاربر تهاتر'),
+              proposerPhone: String((isReceived ? senderObj.phone : receiverObj.phone) || ''),
+              note: String(o.note || ''),
+              status:
+                o.status === 'ACCEPTED'
+                  ? 'accepted'
+                  : o.status === 'REJECTED'
+                  ? 'rejected'
+                  : 'pending',
+              createdAt: new Date(String(o.createdAt)).toLocaleDateString('fa-IR'),
+            };
+          })
+        );
+      }
+
+      if (Array.isArray(installmentsRes)) {
+        setInstallmentRequests(
+          installmentsRes.map((ir) => {
+            const totalAmt = Number(ir.totalAmount || 0);
+            const coveredAmt = Number(ir.barterCoveredAmount || 0);
+            return {
+              id: String(ir.id),
+              listingId: String(ir.listingId || ''),
+              listingTitle: String((ir.listing as { title?: string })?.title || ''),
+              totalAmount: totalAmt,
+              barterCoveredAmount: coveredAmt,
+              loanAmount: Number(ir.loanAmount ?? ir.financedPrincipal ?? Math.max(0, totalAmt - coveredAmt)),
+              months: Number(ir.months || 12),
+              monthlyInstallment: Number(ir.monthlyInstallment || 0),
+              status:
+                ir.status === 'APPROVED' || ir.status === 'COMPLETED'
+                  ? 'تایید شده'
+                  : ir.status === 'REJECTED'
+                  ? 'تکمیل مدارک'
+                  : 'در حال بررسی اعتبارسنجی',
+              createdAt: new Date(String(ir.createdAt)).toLocaleDateString('fa-IR'),
+            };
+          })
+        );
+      }
+
+      if (Array.isArray(chatThreadsRes) && chatThreadsRes.length > 0) {
+        const mappedThreads = chatThreadsRes.map((th) => ({
+          id: String(th.id),
+          title: String(th.title || 'گفتگوی امن'),
+          subtitle: String(th.subtitle || ''),
+          messages: ((th.messages as Array<{ id: string; senderId: string; body: string; createdAt: string }>) || []).map(
+            (m) => ({
+              id: m.id,
+              sender: (m.senderId === profile.id ? 'me' : 'other') as 'me' | 'other',
+              text: m.body,
+              time: new Date(m.createdAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+            })
+          ),
+        }));
+        setThreads((prev) => {
+          const adminOnly = prev.filter((t) => t.isAdmin);
+          return [...mappedThreads, ...adminOnly];
+        });
+      }
+
+      if (Array.isArray(notificationsRes)) {
+        setNotifications(
+          notificationsRes.map((n) => ({
+            id: n.id,
+            title: n.title,
+            description: n.body,
+            type: 'offer' as const,
+            time: new Date(n.createdAt).toLocaleDateString('fa-IR'),
+            read: n.isRead,
+          }))
+        );
       }
 
       if (Array.isArray(sessionList)) {
@@ -584,6 +789,18 @@ export default function HomePage() {
   };
 
   const handleToggleBookmark = (id: string) => {
+    if (isLoggedIn) {
+      void tahatorApi
+        .toggleBookmark(id)
+        .then((res) => {
+          setBookmarks((prev) =>
+            res.bookmarked ? [id, ...prev.filter((x) => x !== id)] : prev.filter((item) => item !== id)
+          );
+          triggerToast(res.bookmarked ? 'آگهی به نشان‌ها اضافه شد' : 'آگهی از نشان‌ها حذف شد');
+        })
+        .catch(() => {});
+      return;
+    }
     setBookmarks((prev) => {
       const exists = prev.includes(id);
       const next = exists ? prev.filter((item) => item !== id) : [id, ...prev];
@@ -599,10 +816,20 @@ export default function HomePage() {
       persistSafe('tahator_notes', next);
       return next;
     });
+    if (isLoggedIn) {
+      if (text.trim()) {
+        void tahatorApi.upsertListingNote(id, text.trim()).catch(() => {});
+      } else {
+        void tahatorApi.deleteListingNote(id).catch(() => {});
+      }
+    }
   };
 
   const handleSelectListing = (listing: Listing) => {
     setSelectedListing(listing);
+    if (listing.id && !listing.id.startsWith('ad-')) {
+      void tahatorApi.getPublicListingDetail(listing.id).catch(() => {});
+    }
     setListingMeta((prev) => {
       const cur = prev[listing.id] || {
         moderationStatus: 'published' as AdModerationStatus,
@@ -624,6 +851,9 @@ export default function HomePage() {
   };
 
   const handleTrackPhoneClick = (listingId: string) => {
+    if (listingId && !listingId.startsWith('ad-')) {
+      void tahatorApi.trackListingContact(listingId).catch(() => {});
+    }
     setListingMeta((prev) => {
       const cur = prev[listingId] || {
         moderationStatus: 'published' as AdModerationStatus,
@@ -662,6 +892,7 @@ export default function HomePage() {
         cityId: matchedCity?.id,
         cityName: newAd.city,
         neighborhood: newAd.neighborhood || 'مرکزی',
+        streetHint: newAd.coordinates?.streetHint,
         title: newAd.title,
         description: safeDescription,
         price: newAd.price || 0,
@@ -669,6 +900,9 @@ export default function HomePage() {
         hasExchange: newAd.hasExchange,
         exchangeWith: newAd.exchangeWith,
         hasInstallmentPlan: newAd.hasInstallmentPlan,
+        lat: newAd.coordinates?.lat,
+        lng: newAd.coordinates?.lng,
+        isApproximateLocation: Boolean(newAd.coordinates?.isApproximate),
         images: newAd.images,
       })
       .then((created) => {
@@ -698,6 +932,40 @@ export default function HomePage() {
       });
   };
 
+  const handleApplyInstallment = ({
+    listing,
+    totalAmount,
+    barterCoveredAmount,
+    months,
+  }: {
+    listing: Listing;
+    totalAmount: number;
+    barterCoveredAmount: number;
+    months: number;
+  }) => {
+    if (!isLoggedIn) {
+      triggerToast('برای ثبت درخواست تسهیلات ۵۰/۵۰ ابتدا با شماره موبایل وارد شوید');
+      setSelectedListing(null);
+      setShowAuthModal(true);
+      return;
+    }
+    void tahatorApi
+      .applyInstallment({
+        listingId: listing.id,
+        totalAmount,
+        barterCoveredAmount,
+        months,
+        method: 'yearly',
+      })
+      .then(() => {
+        void syncSessionFromBackend();
+        triggerToast(`درخواست تسهیلات ۵۰/۵۰ (${toPersianDigits(months)} ماهه) با موفقیت ثبت شد`);
+      })
+      .catch((err) => {
+        triggerToast(err instanceof ApiClientError ? err.message : 'ثبت درخواست تسهیلات انجام نشد');
+      });
+  };
+
   const handleEditAd = (
     id: string,
     updates: {
@@ -708,6 +976,20 @@ export default function HomePage() {
       description: string;
     }
   ) => {
+    if (isLoggedIn) {
+      void tahatorApi
+        .updateMyListing(id, {
+          title: updates.title,
+          price: updates.price,
+          priceLabel: updates.price === 0 ? 'توافقی' : undefined,
+          hasExchange: updates.hasExchange,
+          exchangeWith: updates.hasExchange ? updates.exchangeWith : undefined,
+          description: updates.description,
+        })
+        .catch((err) => {
+          if (err instanceof ApiClientError) triggerToast(err.message);
+        });
+    }
     setListings((prev) =>
       prev.map((item) =>
         item.id === id
@@ -762,41 +1044,23 @@ export default function HomePage() {
   };
 
   const handleTopUpWallet = (amount: number) => {
-    const applyLocal = (newBal?: number) => {
-      const newTx: WalletTransaction = {
-        id: `tx-${Date.now()}`,
-        title: 'افزایش اعتبار کیف پول تهاتر آپ',
-        amount,
-        type: 'credit',
-        date: 'امروز',
-        status: 'موفق',
-      };
-      setWalletBalance((prev) => {
-        const next = newBal !== undefined ? newBal : prev + amount;
-        persistSafe('tahator_wallet_v2', next);
-        return next;
-      });
-      setTransactions((prev) => {
-        const next = [newTx, ...prev];
-        persistSafe('tahator_tx_v2', next);
-        return next;
-      });
-      triggerToast('کیف پول با موفقیت شارژ شد');
-    };
-
-    if (isLoggedIn) {
-      void tahatorApi
-        .topUpWallet(amount)
-        .then((res) => {
-          const parsed = Number(res.availableBalance);
-          applyLocal(Number.isFinite(parsed) ? parsed : undefined);
-        })
-        .catch(() => {
-          applyLocal();
-        });
+    if (!isLoggedIn) {
+      triggerToast('برای شارژ کیف‌پول ابتدا وارد حساب کاربری شوید');
+      setShowAuthModal(true);
       return;
     }
-    applyLocal();
+    void tahatorApi
+      .initiateWalletGateway(amount)
+      .then((gw) => {
+        setPendingGatewayTx({
+          authority: gw.authority,
+          amount: Number(gw.amount) || amount,
+          bankName: gw.bankName || 'درگاه شاپرک تهاتر آپ',
+        });
+      })
+      .catch((err) => {
+        triggerToast(err instanceof ApiClientError ? err.message : 'خطا در اتصال به درگاه پرداخت');
+      });
   };
 
   const handleLadderAd = (id: string) => {
@@ -861,6 +1125,11 @@ export default function HomePage() {
   };
 
   const handleRenewAd = (id: string) => {
+    if (isLoggedIn) {
+      void tahatorApi.renewMyListing(id).catch((err) => {
+        if (err instanceof ApiClientError) triggerToast(err.message);
+      });
+    }
     setListingMeta((prev) => {
       const cur = prev[id] || {
         moderationStatus: 'published' as AdModerationStatus,
@@ -893,11 +1162,22 @@ export default function HomePage() {
       return;
     }
 
+    if (listing.id && !listing.id.startsWith('ad-')) {
+      void tahatorApi.trackListingChat(listing.id).catch(() => {});
+    }
+
     setListingMeta((prev) => {
       const cur = prev[listing.id];
       if (!cur) return prev;
       return { ...prev, [listing.id]: { ...cur, chatClicks: cur.chatClicks + 1 } };
     });
+
+    if (isLoggedIn && prefillMessage) {
+      void tahatorApi
+        .startChatThread({ listingId: listing.id, initialMessage: prefillMessage })
+        .then(() => syncSessionFromBackend())
+        .catch(() => {});
+    }
 
     const threadId = `seller-${listing.id}`;
     const nowTime = new Date().toLocaleTimeString('fa-IR', {
@@ -957,6 +1237,22 @@ export default function HomePage() {
       minute: '2-digit',
     });
     const safety = analyzeChatSafety(text);
+    if (isLoggedIn && !threadId.startsWith('seller-') && !threadId.startsWith('admin-')) {
+      void tahatorApi.sendChatMessage(threadId, text).catch(() => {});
+    } else if (isLoggedIn && threadId.startsWith('seller-')) {
+      const listingId = threadId.replace(/^seller-/, '');
+      void tahatorApi
+        .startChatThread({ listingId, initialMessage: text })
+        .then((res) => {
+          const newId = String(res.thread?.id || '');
+          if (newId) setActiveThreadId(newId);
+          void syncSessionFromBackend();
+        })
+        .catch((err) => {
+          if (err instanceof ApiClientError) triggerToast(err.message);
+        });
+    }
+
     setThreads((prev) =>
       prev.map((t) =>
         t.id === threadId
@@ -971,31 +1267,33 @@ export default function HomePage() {
       )
     );
 
-    setTimeout(() => {
-      setThreads((prev) =>
-        prev.map((t) =>
-          t.id === threadId
-            ? {
-                ...t,
-                messages: [
-                  ...t.messages,
-                  {
-                    id: `reply-${Date.now()}`,
-                    sender: 'other',
-                    text:
-                      safety.riskLevel === 'danger'
-                        ? '⚠️ هشدار هوشمند: لطفاً هیچ مبلغی پیش از بازدید حضوری و ثبت معامله امن پرداخت نکنید.'
-                        : t.isAdmin
-                        ? 'پیام شما توسط کارشناس تهاتر آپ دریافت شد. لطفاً کد آگهی یا شماره تماس خود را جهت بررسی شرایط اقساط و معاوضه ارسال بفرمایید.'
-                        : 'ممنون از پیام شما. لطفاً تصویر یا مشخصات مورد پیشنهادی برای معاوضه را ارسال کنید تا بررسی کنم.',
-                    time: nowTime,
-                  },
-                ],
-              }
-            : t
-        )
-      );
-    }, 650);
+    if (!isLoggedIn || threadId.startsWith('admin-')) {
+      setTimeout(() => {
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === threadId
+              ? {
+                  ...t,
+                  messages: [
+                    ...t.messages,
+                    {
+                      id: `reply-${Date.now()}`,
+                      sender: 'other',
+                      text:
+                        safety.riskLevel === 'danger'
+                          ? '⚠️ هشدار هوشمند: لطفاً هیچ مبلغی پیش از بازدید حضوری و ثبت معامله امن پرداخت نکنید.'
+                          : t.isAdmin
+                          ? 'پیام شما توسط کارشناس تهاتر آپ دریافت شد. لطفاً کد آگهی یا شماره تماس خود را جهت بررسی شرایط اقساط و معاوضه ارسال بفرمایید.'
+                          : 'ممنون از پیام شما. لطفاً تصویر یا مشخصات مورد پیشنهادی برای معاوضه را ارسال کنید تا بررسی کنم.',
+                      time: nowTime,
+                    },
+                  ],
+                }
+              : t
+          )
+        );
+      }, 650);
+    }
   };
 
   const handleSubmitBarterOffer = (payload: {
@@ -1005,48 +1303,61 @@ export default function HomePage() {
     installmentRequested: boolean;
     note: string;
   }) => {
-    const targetPrice = payload.listing.price || 0;
-    const diff =
-      targetPrice > 0 && payload.offeredEstimatedPrice > 0
-        ? Math.abs(targetPrice - payload.offeredEstimatedPrice)
-        : 0;
-    const newOffer: BarterOffer = {
-      id: `bo-${Date.now()}`,
-      direction: 'sent',
-      listingId: payload.listing.id,
-      listingTitle: payload.listing.title,
-      listingImage: payload.listing.images[0] || '/ads/no-image.svg',
-      listingPrice: targetPrice,
-      offeredItemTitle: payload.offeredItemTitle,
-      offeredEstimatedPrice: payload.offeredEstimatedPrice,
-      cashDifference: diff,
-      installmentRequested: payload.installmentRequested,
-      aiMatchPercent: 91,
-      proposerName: payload.listing.sellerName,
-      proposerPhone: payload.listing.sellerPhone,
-      note: payload.note,
-      status: 'pending',
-      createdAt: 'لحظاتی پیش',
-    };
-    setBarterOffers((prev) => {
-      const next = [newOffer, ...prev];
-      persistSafe('tahator_offers_v2', next);
-      return next;
-    });
-    triggerToast('پیشنهاد معاوضه شما ارسال و در داشبورد تهاتر من ثبت شد');
+    if (!isLoggedIn) {
+      triggerToast('برای ارسال پیشنهاد معاوضه ابتدا وارد حساب کاربری شوید');
+      setShowAuthModal(true);
+      return;
+    }
+
+    void tahatorApi
+      .createBarterOffer({
+        listingId: payload.listing.id,
+        offeredItemTitle: payload.offeredItemTitle,
+        offeredEstimatedPrice: payload.offeredEstimatedPrice,
+        installmentRequested: payload.installmentRequested,
+        note: payload.note || 'پیشنهاد تهاتر ثبت‌شده در سامانه',
+      })
+      .then(() => {
+        void syncSessionFromBackend();
+        triggerToast('پیشنهاد معاوضه در سامانه ثبت و به فروشنده ارسال شد');
+      })
+      .catch((err) => {
+        triggerToast(err instanceof ApiClientError ? err.message : 'ثبت پیشنهاد معاوضه انجام نشد');
+      });
   };
 
   const handleSaveCurrentSearch = () => {
+    const titleText =
+      searchQuery.trim() ||
+      (filters.category
+        ? `جستجو در ${filters.category}`
+        : 'همه آگهی‌های جدید تهاتر آپ');
+    const cityLabel = selectedCities.length > 0 ? selectedCities.join('، ') : 'همه شهرها';
+
+    if (isLoggedIn) {
+      const matchedCat = backendCategories.find((c) => c.name === filters.category);
+      void tahatorApi
+        .createSavedSearch({
+          title: titleText,
+          query: searchQuery.trim(),
+          categorySlug: matchedCat?.slug,
+          cityLabel,
+          onlyExchange: filters.onlyExchange,
+        })
+        .then(() => {
+          void syncSessionFromBackend();
+          triggerToast('این جستجو در بخش «جستجوهای ذخیره‌شده» داشبورد ثبت شد');
+        })
+        .catch(() => {});
+      return;
+    }
+
     const newSearch: SavedSearch = {
       id: `ss-${Date.now()}`,
-      title:
-        searchQuery.trim() ||
-        (filters.category
-          ? `جستجو در ${filters.category}`
-          : 'همه آگهی‌های جدید تهاتر آپ'),
+      title: titleText,
       query: searchQuery.trim(),
       category: filters.category,
-      cityLabel: selectedCities.length > 0 ? selectedCities.join('، ') : 'همه شهرها',
+      cityLabel,
       onlyExchange: filters.onlyExchange,
       notifyEnabled: true,
       createdAt: 'امروز',
@@ -1066,8 +1377,13 @@ export default function HomePage() {
       return;
     }
     const safeRole = normalizeUserRole(role);
+    const allowedSet = new Set(availableDashboards.map((d) => normalizeUserRole(d.roleCode)));
+    if (!allowedSet.has('admin') && !allowedSet.has(safeRole)) {
+      triggerToast('حساب کاربری شما مجوز دسترسی به این میز تخصصی را ندارد');
+      return;
+    }
     setUserRole(safeRole);
-    triggerToast(`نقش فعال به «${getRoleMeta(safeRole).shortTitle}» تغییر یافت`);
+    triggerToast(`میز کار فعال به «${getRoleMeta(safeRole).shortTitle}» تغییر یافت`);
   };
 
   const updateFilters = (partial: Partial<FilterState>) => {
@@ -1112,7 +1428,7 @@ export default function HomePage() {
 
       if (q) {
         const haystack =
-          `${item.title} ${item.description} ${item.category} ${item.subcategory} ${item.neighborhood} ${item.city} ${item.exchangeWith || ''}`.toLowerCase();
+          `${item.code} ${item.title} ${item.description} ${item.category} ${item.subcategory} ${item.neighborhood} ${item.city} ${item.exchangeWith || ''}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
 
@@ -1236,7 +1552,10 @@ export default function HomePage() {
             triggerToast('برای دسترسی به پنل نقش ابتدا وارد حساب کاربری شوید');
             return;
           }
-          if (userRole !== 'user') {
+          if (
+            userRole !== 'user' ||
+            availableDashboards.some((d) => normalizeUserRole(d.roleCode) !== 'user')
+          ) {
             setShowRolePanelModal(true);
           }
         }}
@@ -1259,6 +1578,7 @@ export default function HomePage() {
           isLoggedIn={isLoggedIn}
           user={userProfile}
           userRole={userRole}
+          availableDashboards={availableDashboards}
           onOpenAuthModal={() => setShowAuthModal(true)}
           onLogout={() => {
             void handleLogout();
@@ -1290,11 +1610,13 @@ export default function HomePage() {
                   fullName: partial.name?.trim() || undefined,
                 })
                 .then((res) => {
+                  const verified = res.user?.isVerified ?? res.isVerified ?? true;
+                  const ibanMasked = res.user?.ibanMasked ?? res.ibanMasked;
                   setUserProfile((prev) => {
                     const next = {
                       ...prev,
-                      isVerified: res.isVerified,
-                      iban: res.ibanMasked || prev.iban,
+                      isVerified: verified,
+                      iban: ibanMasked || prev.iban,
                     };
                     persistSafe('tahator_profile_v2', next);
                     return next;
@@ -1363,8 +1685,51 @@ export default function HomePage() {
           onRenewAd={handleRenewAd}
           onEditAd={handleEditAd}
           onDeleteAd={handleDeleteUserAd}
+          onPinLocationAd={(ad) => {
+            setUnpinnedPromptItems([
+              {
+                id: ad.id,
+                code: ad.code,
+                title: ad.title,
+                neighborhood: ad.neighborhood,
+                streetHint: ad.coordinates?.streetHint,
+                price: ad.price,
+                city: { name: ad.city, slug: ad.city },
+              },
+            ]);
+            setMissingLocManual(true);
+            setShowMissingLocationModal(true);
+          }}
           barterAssets={barterAssets}
           onAddBarterAsset={(asset) => {
+            if (isLoggedIn) {
+              const matchedCat = backendCategories.find((c) => c.name === asset.category) || backendCategories[0];
+              if (matchedCat) {
+                void tahatorApi
+                  .createBarterAsset({
+                    categoryId: matchedCat.id,
+                    title: asset.title,
+                    estimatedValue: asset.estimatedValue,
+                    condition:
+                      asset.condition === 'پلمپ / صفر'
+                        ? 'NEW'
+                        : asset.condition === 'کارکرده سالم'
+                        ? 'USED'
+                        : 'LIKE_NEW',
+                    cityName: asset.city,
+                    swapPreference: asset.swapPreference,
+                    note: asset.note,
+                  })
+                  .then(() => {
+                    void syncSessionFromBackend();
+                    triggerToast('دارایی جدید در پایگاه‌داده سبد تهاتر شما ثبت شد');
+                  })
+                  .catch((err) => {
+                    triggerToast(err instanceof ApiClientError ? err.message : 'ثبت دارایی ناموفق بود');
+                  });
+                return;
+              }
+            }
             const newAsset: BarterAsset = {
               ...asset,
               id: `ba-${Date.now()}`,
@@ -1378,6 +1743,9 @@ export default function HomePage() {
             triggerToast('دارایی جدید به سبد تهاتر شما اضافه شد');
           }}
           onDeleteBarterAsset={(id) => {
+            if (isLoggedIn) {
+              void tahatorApi.deleteBarterAsset(id).catch(() => {});
+            }
             setBarterAssets((prev) => {
               const next = prev.filter((a) => a.id !== id);
               persistSafe('tahator_barter_assets_v2', next);
@@ -1387,6 +1755,14 @@ export default function HomePage() {
           }}
           barterOffers={barterOffers}
           onRespondBarterOffer={(offerId, status) => {
+            if (isLoggedIn) {
+              void tahatorApi
+                .respondBarterOffer(offerId, status === 'accepted' ? 'ACCEPTED' : 'REJECTED')
+                .then(() => syncSessionFromBackend())
+                .catch((err) => {
+                  if (err instanceof ApiClientError) triggerToast(err.message);
+                });
+            }
             setBarterOffers((prev) => {
               const next = prev.map((o) => (o.id === offerId ? { ...o, status } : o));
               persistSafe('tahator_offers_v2', next);
@@ -1409,6 +1785,9 @@ export default function HomePage() {
           onSaveNote={handleSaveNote}
           recentAds={recentAds}
           onClearRecent={() => {
+            if (isLoggedIn) {
+              void tahatorApi.clearRecentViews().catch(() => {});
+            }
             setRecentIds([]);
             persistSafe('tahator_recent', []);
             triggerToast('تاریخچه بازدیدهای اخیر پاک شد');
@@ -1432,6 +1811,9 @@ export default function HomePage() {
             triggerToast(`جستجوی «${s.title}» اجرا شد`);
           }}
           onDeleteSavedSearch={(id) => {
+            if (isLoggedIn) {
+              void tahatorApi.deleteSavedSearch(id).catch(() => {});
+            }
             setSavedSearches((prev) => {
               const next = prev.filter((s) => s.id !== id);
               persistSafe('tahator_searches_v2', next);
@@ -1440,6 +1822,9 @@ export default function HomePage() {
           }}
           notifications={notifications}
           onMarkNotificationsRead={() => {
+            if (isLoggedIn) {
+              void tahatorApi.markNotificationsRead().catch(() => {});
+            }
             setNotifications((prev) => {
               const next = prev.map((n) => ({ ...n, read: true }));
               persistSafe('tahator_notifications_v2', next);
@@ -1888,6 +2273,55 @@ export default function HomePage() {
             </button>
           </div>
 
+          {/* Highlighted Site-Wide 50/50 Facilities & Installments Banner */}
+          <section className="mb-4 p-3.5 sm:p-4 rounded-[10px] border border-[var(--brand-action)]/30 bg-[var(--brand-soft)]/55 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--brand-action)] text-white text-[11px] font-bold">
+                  <Percent className="w-3 h-3" />
+                  <span>طرح ویژه تسهیلات ۵۰/۵۰</span>
+                </span>
+                <span className="text-[11.5px] font-bold text-[var(--semantic-positive)] bg-[var(--semantic-positive-soft)] px-2 py-0.5 rounded">
+                  حتی بدون پیش‌پرداخت نقدی (با تهاتر دارایی)
+                </span>
+              </div>
+              <h2 className="text-[14px] sm:text-[15px] font-extrabold text-[var(--content-neutral-stronger)]">
+                خرید اقساطی ملک، خودرو و موتورسیکلت با بازپرداخت ۱ تا ۵ سال (۱۲ تا ۶۰ ماه)
+              </h2>
+              <p className="text-[12px] text-[var(--content-neutral-default)] leading-[21px]">
+                ۵۰٪ ارزش معامله را نقد یا با تهاتر دارایی غیرنقدی تأمین کنید و ۵۰٪ باقیمانده را با قسط ماهانه مناسب بپردازید. مشاوره فوری: <span className="font-bold dir-ltr text-[var(--content-neutral-stronger)]">{toPersianDigits('02191016487')}</span>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowFacilitiesModal(true)}
+                className="kt-button--primary !h-[34px] !px-3.5 text-[12px]"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>محاسبه آنلاین قسط و سود</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowInstallmentModal(true)}
+                className="kt-button--outlined !h-[34px] !px-3 text-[12px]"
+              >
+                <span>شرایط تسهیلات ۵۰/۵۰</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => updateFilters({ onlyInstallment: !filters.onlyInstallment })}
+                className={`kt-button--outlined !h-[34px] !px-3 text-[12px] ${
+                  filters.onlyInstallment
+                    ? '!border-[var(--semantic-warning)] !bg-[var(--semantic-warning-soft)] !text-[var(--semantic-warning)] font-bold'
+                    : ''
+                }`}
+              >
+                <span>آگهی‌های قسطی</span>
+              </button>
+            </div>
+          </section>
+
           {showMapView && (
             <MapFeedView
               listings={filteredListings}
@@ -2187,7 +2621,23 @@ export default function HomePage() {
             setShowAiModal(true);
           }}
           onSubmitBarterOffer={handleSubmitBarterOffer}
+          onApplyInstallment={handleApplyInstallment}
           onReportListing={(ad, reason, details) => {
+            if (isLoggedIn) {
+              void tahatorApi
+                .submitAdReport({
+                  listingId: ad.id,
+                  reason,
+                  details: details || 'ثبت‌شده توسط کاربر از صفحه جزئیات آگهی',
+                })
+                .then(() => {
+                  triggerToast('گزارش شما در کارتابل ناظر آگهی ثبت شد');
+                })
+                .catch((err) => {
+                  if (err instanceof ApiClientError) triggerToast(err.message);
+                });
+              return;
+            }
             const newReport: AdReport = {
               id: `rep-${Date.now()}`,
               listingId: ad.id,
@@ -2199,7 +2649,7 @@ export default function HomePage() {
               createdAt: 'لحظاتی پیش',
             };
             setAdReports((prev) => [newReport, ...prev]);
-            triggerToast('گزارش شما در کارتابل ناظر آگهی ثبت شد');
+            triggerToast('گزارش شما ثبت شد');
           }}
           onTrackPhoneClick={handleTrackPhoneClick}
           aiConfig={aiConfig}
@@ -2358,11 +2808,25 @@ export default function HomePage() {
         />
       )}
 
-      {/* Multi-Role Control Center Modal (Admin -> Support) */}
-      {showRolePanelModal && isLoggedIn && userRole !== 'user' && (
+      {/* Multi-Role Control Center Modal (Admin -> Support -> 9 Roles) */}
+      {showRolePanelModal &&
+        isLoggedIn &&
+        (userRole !== 'user' ||
+          availableDashboards.some((d) => normalizeUserRole(d.roleCode) !== 'user')) && (
         <RolePanelModal
           activeRole={userRole}
+          allowedRoles={availableDashboards.map((d) => normalizeUserRole(d.roleCode))}
           onSwitchRole={handleSwitchRole}
+          onRefreshCatalog={() => {
+            void tahatorApi
+              .getPublicListings({ limit: 250 })
+              .then((res) => {
+                if (Array.isArray(res.items)) {
+                  setListings(res.items.map(mapBackendListingToUi));
+                }
+              })
+              .catch(() => {});
+          }}
           onOpenUserDashboard={() => {
             setDashboardTab('myAds');
             setShowDashboardModal(true);
@@ -2486,6 +2950,30 @@ export default function HomePage() {
           onClose={() => setShowSupportModal(false)}
           onOpenAdminChat={() => handleOpenChatWith(undefined, true)}
           onSubmitTicket={(subject, category, text) => {
+            if (isLoggedIn) {
+              const catMap: Record<
+                'فنی' | 'معاوضه و داوری' | 'تسهیلات و اقساط' | 'گزارش تخلف',
+                'TECHNICAL' | 'BARTER_ARBITRATION' | 'INSTALLMENT_FINANCE' | 'VIOLATION_REPORT'
+              > = {
+                فنی: 'TECHNICAL',
+                'معاوضه و داوری': 'BARTER_ARBITRATION',
+                'تسهیلات و اقساط': 'INSTALLMENT_FINANCE',
+                'گزارش تخلف': 'VIOLATION_REPORT',
+              };
+              void tahatorApi
+                .createSupportTicket({
+                  subject,
+                  category: catMap[category] || 'BARTER_ARBITRATION',
+                  message: text,
+                })
+                .then(() => {
+                  triggerToast('تیکت شما در کارتابل کارشناس پشتیبانی ثبت شد');
+                })
+                .catch((err) => {
+                  if (err instanceof ApiClientError) triggerToast(err.message);
+                });
+              return;
+            }
             const newTicket: SupportTicket = {
               id: `tkt-${Date.now()}`,
               subject,
@@ -2501,6 +2989,120 @@ export default function HomePage() {
             triggerToast('تیکت شما در کارتابل پشتیبانی ثبت شد');
           }}
         />
+      )}
+
+      {/* One-Time Missing Map Location Prompt (or Manual Pin Editor) */}
+      {showMissingLocationModal && unpinnedPromptItems.length > 0 && (
+        <MissingLocationModal
+          listings={unpinnedPromptItems}
+          isManual={missingLocManual}
+          onSaveLocation={async (listingId, coords) => {
+            await tahatorApi.updateMyListing(listingId, {
+              lat: coords.lat,
+              lng: coords.lng,
+              isApproximateLocation: coords.isApproximate,
+              streetHint: coords.streetHint,
+            });
+            setListings((prev) =>
+              prev.map((item) =>
+                item.id === listingId
+                  ? {
+                      ...item,
+                      coordinates: {
+                        lat: coords.lat,
+                        lng: coords.lng,
+                        streetHint: coords.streetHint || item.coordinates.streetHint,
+                        isApproximate: coords.isApproximate,
+                        hasCoords: true,
+                      },
+                    }
+                  : item
+              )
+            );
+            triggerToast('موقعیت مکانی آگهی روی نقشه با موفقیت ثبت شد');
+          }}
+          onDismiss={async (markCompletedPermanently) => {
+            setShowMissingLocationModal(false);
+            setMissingLocDismissed(true);
+            if (markCompletedPermanently && isLoggedIn && !missingLocManual) {
+              try {
+                await tahatorApi.updateMyProfile({ locationPromptCompleted: true });
+              } catch {
+                // Ignore transient network errors when closing modal
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* Shaparak Payment Gateway Modal */}
+      {pendingGatewayTx && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4"
+          onClick={() => setPendingGatewayTx(null)}
+        >
+          <div
+            className="w-full max-w-[440px] bg-[var(--surface-neutral-weaker)] rounded-[10px] border border-[var(--border-neutral-weaker)] shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border-neutral-weaker)] pb-3">
+              <h3 className="text-[16px] font-bold text-[var(--content-neutral-stronger)]">
+                درگاه امن پرداخت شاپرک — {pendingGatewayTx.bankName}
+              </h3>
+              <span className="text-[11px] font-bold text-[var(--semantic-positive)]">شبیه‌ساز تست</span>
+            </div>
+            <div className="p-3.5 rounded-[8px] bg-[var(--surface-neutral-subtle)] space-y-2 text-[13px]">
+              <div className="flex justify-between">
+                <span className="text-[var(--content-neutral-default)]">شناسه مرجع شاپرک:</span>
+                <span className="font-bold dir-ltr">{pendingGatewayTx.authority}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--content-neutral-default)]">مبلغ قابل پرداخت:</span>
+                <span className="font-extrabold text-[var(--brand-primary)]">
+                  {pendingGatewayTx.amount.toLocaleString('fa-IR')} تومان
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const auth = pendingGatewayTx.authority;
+                  void tahatorApi
+                    .verifyWalletGateway(auth, true)
+                    .then((res) => {
+                      setPendingGatewayTx(null);
+                      void syncSessionFromBackend();
+                      triggerToast(res.message || 'پرداخت تایید و کیف پول شارژ شد');
+                    })
+                    .catch((err) => {
+                      triggerToast(err instanceof ApiClientError ? err.message : 'خطا در تایید تراکنش');
+                    });
+                }}
+                className="kt-button--primary flex-1 !h-[40px]"
+              >
+                تایید پرداخت شاپرک
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const auth = pendingGatewayTx.authority;
+                  void tahatorApi
+                    .verifyWalletGateway(auth, false)
+                    .then((res) => {
+                      setPendingGatewayTx(null);
+                      void syncSessionFromBackend();
+                      triggerToast(res.message || 'تراکنش لغو شد');
+                    })
+                    .catch(() => setPendingGatewayTx(null));
+                }}
+                className="kt-button--outlined !h-[40px] !px-4 text-[var(--semantic-negative)]"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast Feedback Banner */}
